@@ -1,0 +1,14 @@
+
+node_modules/
+.env
+.env.*
+!.env.example
+dist/
+coverage/
+.DS_Store
+Thumbs.db
+
+# Real or confidential institutional data
+data/raw/
+data/private/
+data/real/
