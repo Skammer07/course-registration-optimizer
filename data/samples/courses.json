@@ -1,0 +1,5 @@
+[
+  { "id": "C1", "name": "Data Structures", "capacity": 4 },
+  { "id": "C2", "name": "Database Systems", "capacity": 4 },
+  { "id": "C3", "name": "Operating Systems", "capacity": 4 }
+]

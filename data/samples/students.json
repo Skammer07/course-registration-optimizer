@@ -1,0 +1,10 @@
+[
+  { "id": "S1", "name": "Aarav", "cgpa": 9.5 },
+  { "id": "S2", "name": "Priya", "cgpa": 9.0 },
+  { "id": "S3", "name": "Rahul", "cgpa": 8.5 },
+  { "id": "S4", "name": "Sneha", "cgpa": 8.0 },
+  { "id": "S5", "name": "Arjun", "cgpa": 7.5 },
+  { "id": "S6", "name": "Neha", "cgpa": 7.0 },
+  { "id": "S7", "name": "Vikram", "cgpa": 6.5 },
+  { "id": "S8", "name": "Ananya", "cgpa": 6.0 }
+]

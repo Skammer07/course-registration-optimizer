@@ -1,0 +1,39 @@
+
+{
+  "C1": [
+    {
+      "day": "Monday",
+      "start": "09:00",
+      "end": "09:50"
+    },
+    {
+      "day": "Wednesday",
+      "start": "09:00",
+      "end": "09:50"
+    }
+  ],
+  "C2": [
+    {
+      "day": "Monday",
+      "start": "09:00",
+      "end": "09:50"
+    },
+    {
+      "day": "Thursday",
+      "start": "10:00",
+      "end": "10:50"
+    }
+  ],
+  "C3": [
+    {
+      "day": "Tuesday",
+      "start": "11:00",
+      "end": "11:50"
+    },
+    {
+      "day": "Friday",
+      "start": "11:00",
+      "end": "11:50"
+    }
+  ]
+}

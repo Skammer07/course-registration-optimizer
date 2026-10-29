@@ -1,0 +1,18 @@
+[
+  { "studentId": "S1", "courseId": "C1", "rank": 1 },
+  { "studentId": "S1", "courseId": "C2", "rank": 2 },
+  { "studentId": "S2", "courseId": "C1", "rank": 1 },
+  { "studentId": "S2", "courseId": "C2", "rank": 2 },
+  { "studentId": "S3", "courseId": "C1", "rank": 1 },
+  { "studentId": "S3", "courseId": "C2", "rank": 2 },
+  { "studentId": "S4", "courseId": "C1", "rank": 1 },
+  { "studentId": "S4", "courseId": "C2", "rank": 2 },
+  { "studentId": "S5", "courseId": "C2", "rank": 1 },
+  { "studentId": "S5", "courseId": "C3", "rank": 2 },
+  { "studentId": "S6", "courseId": "C2", "rank": 1 },
+  { "studentId": "S6", "courseId": "C3", "rank": 2 },
+  { "studentId": "S7", "courseId": "C3", "rank": 1 },
+  { "studentId": "S7", "courseId": "C1", "rank": 2 },
+  { "studentId": "S8", "courseId": "C3", "rank": 1 },
+  { "studentId": "S8", "courseId": "C2", "rank": 2 }
+]
