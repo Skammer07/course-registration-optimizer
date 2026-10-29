@@ -4,143 +4,343 @@ export function allocateMeritPhase(
   options = {}
 ) {
   const meritRatio = options.meritRatio ?? 0.75;
+  const maxCoursesPerStudent = options.maxCoursesPerStudent ?? 2;
 
-  if (meritRatio <= 0 || meritRatio > 1) {
-    throw new Error("meritRatio must be greater than 0 and at most 1");
+  // 1. Validate input
+  if (
+    !Array.isArray(students) ||
+    !Array.isArray(courses) ||
+    !Array.isArray(preferences)
+  ) {
+    throw new Error(
+      "Input must contain students, courses, and preferences arrays"
+    );
   }
 
-  const studentById = new Map(students.map(s => [s.id, s]));
-  const courseById = new Map(courses.map(c => [c.id, c]));
+  if (
+    !Number.isFinite(meritRatio) ||
+    meritRatio <= 0 ||
+    meritRatio > 1
+  ) {
+    throw new Error(
+      "meritRatio must be greater than 0 and at most 1"
+    );
+  }
+
+  if (
+    !Number.isInteger(maxCoursesPerStudent) ||
+    maxCoursesPerStudent < 1
+  ) {
+    throw new Error(
+      "maxCoursesPerStudent must be a positive integer"
+    );
+  }
+
+  // 2. Validate students
+  const studentById = new Map();
+
+  for (const student of students) {
+    if (
+      !student.id ||
+      !Number.isFinite(student.cgpa) ||
+      student.cgpa < 0
+    ) {
+      throw new Error(
+        `Invalid student: ${student.id ?? "unknown"}`
+      );
+    }
+
+    if (studentById.has(student.id)) {
+      throw new Error(`Duplicate student ID: ${student.id}`);
+    }
+
+    studentById.set(student.id, student);
+  }
+
+  // 3. Validate courses
+  const courseById = new Map();
 
   for (const course of courses) {
-    if (!Number.isInteger(course.capacity) || course.capacity < 0) {
-      throw new Error(`Invalid capacity for course ${course.id}`);
+    if (!course.id || courseById.has(course.id)) {
+      throw new Error(
+        `Invalid or duplicate course ID: ${course.id}`
+      );
     }
+
+    if (
+      !Number.isInteger(course.capacity) ||
+      course.capacity < 0
+    ) {
+      throw new Error(
+        `Invalid capacity for course ${course.id}`
+      );
+    }
+
+    courseById.set(course.id, course);
   }
 
+  // 4. Group preferences by student
   const preferencesByStudent = new Map(
-    students.map(s => [s.id, []])
+    students.map(student => [student.id, []])
   );
 
-  for (const p of preferences) {
-    if (!studentById.has(p.studentId) || !courseById.has(p.courseId)) {
-      throw new Error(`Invalid preference for student ${p.studentId}`);
+  const seenPreferences = new Set();
+
+  for (const preference of preferences) {
+    if (
+      !studentById.has(preference.studentId) ||
+      !courseById.has(preference.courseId) ||
+      !Number.isInteger(preference.rank) ||
+      preference.rank < 1
+    ) {
+      throw new Error(
+        `Invalid preference for student ${preference.studentId}`
+      );
     }
 
-    preferencesByStudent.get(p.studentId).push(p);
+    const pairKey =
+      `${preference.studentId}:${preference.courseId}`;
+
+    if (seenPreferences.has(pairKey)) {
+      throw new Error(
+        `Duplicate student-course preference: ${pairKey}`
+      );
+    }
+
+    seenPreferences.add(pairKey);
+
+    preferencesByStudent
+      .get(preference.studentId)
+      .push(preference);
   }
 
   for (const list of preferencesByStudent.values()) {
     list.sort((a, b) => a.rank - b.rank);
   }
 
+  // 5. Sort students by descending CGPA.
+  // Student ID provides deterministic ordering for equal CGPAs.
   const ordered = [...students].sort(
-    (a, b) => b.cgpa - a.cgpa || a.id.localeCompare(b.id)
+    (a, b) =>
+      b.cgpa - a.cgpa ||
+      a.id.localeCompare(b.id)
   );
 
-  const quota = new Map(
-    courses.map(c => [c.id, Math.floor(c.capacity * meritRatio)])
+  // 6. Establish ONE shared merit quota per course.
+  // This quota is shared by both merit iterations.
+  const meritQuota = new Map(
+    courses.map(course => [
+      course.id,
+      Math.floor(course.capacity * meritRatio)
+    ])
   );
 
-  const allocatedCount = new Map(courses.map(c => [c.id, 0]));
+  const meritAllocatedCount = new Map(
+    courses.map(course => [course.id, 0])
+  );
+
+  const studentCourseCount = new Map(
+    students.map(student => [student.id, 0])
+  );
+
   const allocations = [];
-  const allocatedStudents = new Set();
 
+  // Prevent a student from receiving the same course twice.
+  const allocatedPairs = new Set();
 
-  // Process each student in merit order.
-  // If a student fills a course's quota, also consider the remaining
-  // students tied at that CGPA for the same course.
-  for (let i = 0; i < ordered.length; i++) {
-    const student = ordered[i];
+  // 7. Check whether a proposed allocation is allowed.
+  function canReceive(student, course) {
+    const pairKey = `${student.id}:${course.id}`;
 
-    if (allocatedStudents.has(student.id)) continue;
+    if (allocatedPairs.has(pairKey)) {
+      return false;
+    }
 
-    for (const p of preferencesByStudent.get(student.id)) {
-      const course = courseById.get(p.courseId);
-      const used = allocatedCount.get(course.id);
-      const limit = quota.get(course.id);
+    if (
+      studentCourseCount.get(student.id) >=
+      maxCoursesPerStudent
+    ) {
+      return false;
+    }
 
-      if (used >= limit) continue;
+    if (
+      meritAllocatedCount.get(course.id) >=
+      meritQuota.get(course.id)
+    ) {
+      return false;
+    }
+
+    // Keep the existing hook for timetable and other constraints.
+    if (
+      options.canEnroll &&
+      !options.canEnroll(student, course, allocations)
+    ) {
+      return false;
+    }
+
+    return true;
+  }
+
+  // 8. Record a merit allocation.
+  function assign(student, course, preference, iteration) {
+    allocations.push({
+      studentId: student.id,
+      courseId: course.id,
+      preferenceRank: preference.rank,
+      phase: "merit",
+      iteration
+    });
+
+    allocatedPairs.add(`${student.id}:${course.id}`);
+
+    meritAllocatedCount.set(
+      course.id,
+      meritAllocatedCount.get(course.id) + 1
+    );
+
+    studentCourseCount.set(
+      student.id,
+      studentCourseCount.get(student.id) + 1
+    );
+  }
+
+  // 9. Run two merit iterations.
+  for (let iteration = 1; iteration <= 2; iteration++) {
+    // Each student may receive at most one course per iteration.
+    const assignedThisIteration = new Set();
+
+    for (let i = 0; i < ordered.length; i++) {
+      const student = ordered[i];
+
+      if (assignedThisIteration.has(student.id)) {
+        continue;
+      }
 
       if (
-        options.canEnroll &&
-        !options.canEnroll(student, course, allocations)
+        studentCourseCount.get(student.id) >=
+        maxCoursesPerStudent
       ) {
         continue;
       }
 
-      allocations.push({
-        studentId: student.id,
-        courseId: course.id,
-        preferenceRank: p.rank,
-        phase: "merit",
-      });
+      // Try preferences in rank order.
+      for (const preference of preferencesByStudent.get(student.id)) {
+        const course = courseById.get(preference.courseId);
 
-      allocatedStudents.add(student.id);
-      allocatedCount.set(course.id, used + 1);
+        if (!canReceive(student, course)) {
+          continue;
+        }
 
-      // If this allocation fills the quota, include the rest of
-      // the same-CGPA group who prefer this course.
-      if (used + 1 === limit) {
-        let j = i + 1;
+        assign(student, course, preference, iteration);
+        assignedThisIteration.add(student.id);
 
-        while (
-          j < ordered.length &&
-          ordered[j].cgpa === student.cgpa
+        // If the allocation reaches the merit quota,
+        // include remaining students tied at this CGPA
+        // who prefer the same course.
+        if (
+          meritAllocatedCount.get(course.id) ===
+          meritQuota.get(course.id)
         ) {
-          const tiedStudent = ordered[j];
+          let j = i + 1;
 
-          if (!allocatedStudents.has(tiedStudent.id)) {
-            const tiedPreference = preferencesByStudent
-              .get(tiedStudent.id)
-              .find(pref => pref.courseId === course.id);
+          while (
+            j < ordered.length &&
+            ordered[j].cgpa === student.cgpa
+          ) {
+            const tiedStudent = ordered[j];
 
             if (
-              tiedPreference &&
-              (!options.canEnroll ||
-                options.canEnroll(tiedStudent, course, allocations))
+              !assignedThisIteration.has(tiedStudent.id) &&
+              studentCourseCount.get(tiedStudent.id) <
+                maxCoursesPerStudent
             ) {
-              allocations.push({
-                studentId: tiedStudent.id,
-                courseId: course.id,
-                preferenceRank: tiedPreference.rank,
-                phase: "merit",
-              });
+              const tiedPreference = preferencesByStudent
+                .get(tiedStudent.id)
+                .find(
+                  p => p.courseId === course.id
+                );
 
-              allocatedStudents.add(tiedStudent.id);
-              allocatedCount.set(
-                course.id,
-                allocatedCount.get(course.id) + 1
-              );
+              const pairKey =
+                `${tiedStudent.id}:${course.id}`;
+
+              const hasTotalCapacity =
+                // The merit quota may be exceeded for a tie,
+                // but the physical course capacity may not.
+                courses.find(c => c.id === course.id).capacity >
+                allocations.filter(
+                  a => a.courseId === course.id
+                ).length;
+
+              const canEnroll =
+                !options.canEnroll ||
+                options.canEnroll(
+                  tiedStudent,
+                  course,
+                  allocations
+                );
+
+              if (
+                tiedPreference &&
+                !allocatedPairs.has(pairKey) &&
+                hasTotalCapacity &&
+                canEnroll
+              ) {
+                assign(
+                  tiedStudent,
+                  course,
+                  tiedPreference,
+                  iteration
+                );
+
+                assignedThisIteration.add(tiedStudent.id);
+              }
             }
+
+            j++;
           }
-
-          j++;
         }
-      }
 
-      break;
+        // Move to the next student after assigning one course.
+        break;
+      }
     }
   }
 
+  // 10. Return allocations and summaries.
   return {
     allocations,
-    unallocatedStudentIds: students
-      .filter(s => !allocatedStudents.has(s.id))
-      .map(s => s.id),
 
-    courseSummary: courses.map(c => ({
-      courseId: c.id,
-      capacity: c.capacity,
-      meritQuota: quota.get(c.id),
-      meritAllocated: allocatedCount.get(c.id),
-      totalSeatsRemaining: c.capacity - allocatedCount.get(c.id),
+    unallocatedStudentIds: students
+      .filter(
+        student =>
+          studentCourseCount.get(student.id) === 0
+      )
+      .map(student => student.id),
+
+    courseSummary: courses.map(course => ({
+      courseId: course.id,
+      capacity: course.capacity,
+      meritQuota: meritQuota.get(course.id),
+      meritAllocated: meritAllocatedCount.get(course.id),
+      totalSeatsRemaining:
+        course.capacity -
+        allocations.filter(
+          allocation => allocation.courseId === course.id
+        ).length
+    })),
+
+    studentSummary: students.map(student => ({
+      studentId: student.id,
+      coursesAllocated: studentCourseCount.get(student.id)
     })),
 
     assumptions: {
       meritRatio,
-      maxCoursesPerStudentInMeritPhase: 1,
-      tieHandling: "include tied students when quota is reached",
-    },
+      meritIterations: 2,
+      maxCoursesPerStudent,
+      quotaSharedAcrossIterations: true,
+      tieHandling:
+        "Include tied students when quota is reached, subject to total capacity"
+    }
   };
 }

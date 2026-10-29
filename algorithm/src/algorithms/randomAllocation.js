@@ -8,18 +8,10 @@
  * - A student can receive at most maxCoursesPerStudent across all phases.
  * - A student cannot receive the same course twice.
  * - Total course capacity can never be exceeded.
+ * - Timetable clashes are checked against all previous allocations.
  * - Unused merit seats do not increase the random quota.
- *
- * Input:
- * {
- *   students: [{ id, cgpa }],
- *   courses: [{ id, capacity }],
- *   preferences: [{ studentId, courseId, rank }],
- *   existingAllocations: [
- *     { studentId, courseId, phase }
- *   ]
- * }
  */
+
 export function allocateRandomPhase(
   {
     students,
@@ -32,6 +24,7 @@ export function allocateRandomPhase(
   const randomRatio = options.randomRatio ?? 0.25;
   const maxCoursesPerStudent = options.maxCoursesPerStudent ?? 2;
   const random = options.random ?? Math.random;
+  const canEnroll = options.canEnroll;
 
   if (
     !Number.isFinite(randomRatio) ||
@@ -52,6 +45,10 @@ export function allocateRandomPhase(
     throw new Error("random must be a function");
   }
 
+  if (canEnroll !== undefined && typeof canEnroll !== "function") {
+    throw new Error("canEnroll must be a function");
+  }
+
   const studentById = new Map(students.map(s => [s.id, s]));
   const courseById = new Map(courses.map(c => [c.id, c]));
 
@@ -67,7 +64,6 @@ export function allocateRandomPhase(
     }
   }
 
-  // Validate preferences and group them by course.
   const preferencesByCourse = new Map(
     courses.map(course => [course.id, []])
   );
@@ -86,10 +82,9 @@ export function allocateRandomPhase(
 
     const key = `${preference.studentId}::${preference.courseId}`;
 
-    // Avoid adding the same student to a course list more than once.
     if (seenPreferences.has(key)) continue;
-    seenPreferences.add(key);
 
+    seenPreferences.add(key);
     preferencesByCourse.get(preference.courseId).push(preference);
   }
 
@@ -103,7 +98,7 @@ export function allocateRandomPhase(
 
   const studentCoursePairs = new Set();
 
-  // Count allocations made in earlier phases.
+  // Include allocations from earlier phases.
   for (const allocation of existingAllocations) {
     if (
       !studentById.has(allocation.studentId) ||
@@ -144,17 +139,14 @@ export function allocateRandomPhase(
   }
 
   for (const student of students) {
-    if (
-      studentCourseCount.get(student.id) > maxCoursesPerStudent
-    ) {
+    if (studentCourseCount.get(student.id) > maxCoursesPerStudent) {
       throw new Error(
         `Existing allocations exceed course limit for student ${student.id}`
       );
     }
   }
 
-  // Each course gets a fixed random quota.
-  // Unused merit seats are not transferred here.
+  // Calculate the fixed random quota for each course.
   const randomQuota = new Map(
     courses.map(course => [
       course.id,
@@ -168,8 +160,6 @@ export function allocateRandomPhase(
 
   const allocations = [];
 
-  // Process each course's student list separately.
-  // Course order is the order supplied in the input.
   for (const course of courses) {
     const courseId = course.id;
     const quota = randomQuota.get(courseId);
@@ -178,7 +168,7 @@ export function allocateRandomPhase(
 
     const candidates = [...preferencesByCourse.get(courseId)];
 
-    // Fisher-Yates shuffle using the injectable random generator.
+    // Fisher-Yates shuffle.
     for (let i = candidates.length - 1; i > 0; i--) {
       const value = random();
 
@@ -195,7 +185,6 @@ export function allocateRandomPhase(
     }
 
     for (const preference of candidates) {
-      // Stop once this course's random quota is filled.
       if (randomAllocatedCount.get(courseId) >= quota) {
         break;
       }
@@ -203,19 +192,31 @@ export function allocateRandomPhase(
       const studentId = preference.studentId;
       const pairKey = `${studentId}::${courseId}`;
 
-      // Student must not already have this course.
       if (studentCoursePairs.has(pairKey)) continue;
 
-      // Respect the limit across all phases.
       if (
         studentCourseCount.get(studentId) >= maxCoursesPerStudent
       ) {
         continue;
       }
 
-      // Never exceed total course capacity.
       if (courseTotalCount.get(courseId) >= course.capacity) {
         break;
+      }
+
+      // Check timetable compatibility against merit allocations
+      // and random allocations already made in this phase.
+      if (canEnroll) {
+        const allocationsSoFar = [
+          ...existingAllocations,
+          ...allocations,
+        ];
+
+        const student = studentById.get(studentId);
+
+        if (!canEnroll(student, course, allocationsSoFar)) {
+          continue;
+        }
       }
 
       allocations.push({
@@ -281,6 +282,7 @@ export function allocateRandomPhase(
       maxCoursesPerStudent,
       selectionMethod: "random shuffle within each course",
       unusedMeritSeatsTransferred: false,
+      timetableValidationEnabled: Boolean(canEnroll),
     },
   };
 }
