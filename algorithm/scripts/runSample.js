@@ -7,6 +7,7 @@ import { performance } from "node:perf_hooks";
 import { runAllocation } from "../src/algorithms/allocationPipeline.js";
 import { allocateOptimized } from "../src/algorithms/optimizedAllocation.js";
 import { compareAllocations } from "../src/evaluation/compare.js";
+import { validateAllocation } from "../src/validation/validateAllocation.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -63,38 +64,82 @@ function printMetrics(name, metrics, runtimeMs) {
 }
 
 function main() {
+  // Load sample input data.
   const students = readJson("data/samples/students.json");
   const courses = readJson("data/samples/courses.json");
   const preferences = readJson("data/samples/preferences.json");
   const timetable = readJson("data/timetable/mock_timetable.json");
 
   const input = { students, courses, preferences, timetable };
+  const maxCoursesPerStudent = 2;
 
-  // Baseline: merit phase followed by random phase.
+  console.log("\n========== COURSE ALLOCATION COMPARISON ==========");
+  console.log(`Students: ${students.length}`);
+  console.log(`Courses: ${courses.length}`);
+  console.log(
+    `Total available seats: ${courses.reduce(
+      (sum, course) => sum + course.capacity,
+      0
+    )}`
+  );
+
+  // Run baseline: merit allocation followed by random allocation.
   const baselineRun = runAndMeasure(() =>
     runAllocation(
       { students, courses, preferences },
       {
         meritRatio: 0.75,
         randomRatio: 0.25,
-        maxCoursesPerStudent: 2,
+        maxCoursesPerStudent,
         random: () => 0.5,
         timetable,
       }
     )
   );
 
-  // Optimizer: MCMF across all available course capacity.
+  // Run optimized allocation using Min-Cost Max-Flow.
   const optimizedRun = runAndMeasure(() =>
     allocateOptimized(
       { students, courses, preferences },
       {
-        maxCoursesPerStudent: 2,
+        maxCoursesPerStudent,
         timetable,
       }
     )
   );
 
+  // Explicitly validate both results.
+  const baselineValidation = validateAllocation({
+    students,
+    courses,
+    preferences,
+    allocations: baselineRun.result.allocations,
+    timetable,
+    maxCoursesPerStudent,
+  });
+
+  const optimizedValidation = validateAllocation({
+    students,
+    courses,
+    preferences,
+    allocations: optimizedRun.result.allocations,
+    timetable,
+    maxCoursesPerStudent,
+  });
+
+  console.log("\n========== EXPLICIT VALIDATION ==========");
+  console.log("Baseline valid:", baselineValidation.valid);
+  console.log("Baseline errors:", baselineValidation.errors);
+  console.log("Optimizer valid:", optimizedValidation.valid);
+  console.log("Optimizer errors:", optimizedValidation.errors);
+
+  if (!baselineValidation.valid || !optimizedValidation.valid) {
+    throw new Error(
+      "Allocation validation failed. Review the errors printed above."
+    );
+  }
+
+  // Compare allocation quality and constraint metrics.
   const comparison = compareAllocations({
     input,
     baseline: baselineRun.result,
@@ -102,13 +147,6 @@ function main() {
     baselineRuntimeMs: baselineRun.runtimeMs,
     optimizedRuntimeMs: optimizedRun.runtimeMs,
   });
-
-  console.log("\n========== COURSE ALLOCATION COMPARISON ==========");
-  console.log(`Students: ${students.length}`);
-  console.log(`Courses: ${courses.length}`);
-  console.log(
-    `Total available seats: ${courses.reduce((sum, c) => sum + c.capacity, 0)}`
-  );
 
   printMetrics(
     "BASELINE: MERIT + RANDOM",
@@ -130,7 +168,7 @@ function main() {
     }))
   );
 
-  console.log("\n========== VALIDATION ==========");
+  console.log("\n========== VALIDATION SUMMARY ==========");
   console.log(
     "Baseline has zero constraint violations:",
     comparison.baseline.metrics.constraintViolations === 0
@@ -146,8 +184,11 @@ function main() {
     "Baseline: separate merit and random quotas; unused merit quota does not transfer."
   );
   console.log(
-    "Optimizer: optimizes over all available course capacity; does not preserve merit/random quotas."
+    "Optimizer: optimizes over all available course capacity; merit/random quotas are not preserved."
   );
+
+  console.log("\n========== BASELINE ALLOCATIONS ==========");
+  console.table(baselineRun.result.allocations);
 
   console.log("\n========== OPTIMIZED ALLOCATIONS ==========");
   console.table(optimizedRun.result.allocations);

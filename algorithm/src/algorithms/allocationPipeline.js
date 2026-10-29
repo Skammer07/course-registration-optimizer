@@ -2,6 +2,7 @@
 import { allocateMeritPhase } from "./baseline.js";
 import { allocateRandomPhase } from "./randomAllocation.js";
 import { createTimetableCanEnroll } from "../timetable/checkClash.js";
+import { validateAllocation } from "../validation/validateAllocation.js";
 
 export function runAllocation(input, options = {}) {
   const { students, courses, preferences } = input;
@@ -38,8 +39,7 @@ export function runAllocation(input, options = {}) {
     }
   );
 
-  // Phase 2: Random allocation.
-  // Existing merit allocations belong in the FIRST argument.
+  // Phase 2: Random allocation
   const randomResult = allocateRandomPhase(
     {
       students,
@@ -60,12 +60,29 @@ export function runAllocation(input, options = {}) {
     ...randomResult.allocations,
   ];
 
+  // Validate the final combined allocation.
+  const validation = validateAllocation({
+    students,
+    courses,
+    preferences,
+    allocations,
+    timetable: timetable ?? null,
+    maxCoursesPerStudent,
+  });
+
+  if (!validation.valid) {
+    throw new Error(
+      `Allocation validation failed:\n- ${validation.errors.join("\n- ")}`
+    );
+  }
+
   return {
     allocations,
     meritResult,
     randomResult,
+    validation,
 
-    // Preserve the structure expected by the existing tests.
+    // Preserve the existing structure expected by tests.
     phaseSummary: {
       merit: {
         allocated: meritResult.allocations.length,
@@ -81,6 +98,7 @@ export function runAllocation(input, options = {}) {
       "Unused merit quota does not transfer to the random phase.",
       "Each student can receive at most the configured number of courses.",
       "Duplicate student-course allocations are prohibited.",
+      "Final allocations are validated before being returned.",
       timetable
         ? "Timetable validation is enabled."
         : "No timetable was supplied; timetable clash validation is not active.",
