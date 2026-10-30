@@ -12,10 +12,13 @@ export const createUserSchema = z
       .toLowerCase()
       .max(254)
       .regex(/^[^\s@]+@[^\s@]+\.[^\s@]+$/, "Invalid email address"),
+    // Optional: when omitted the server generates a temporary password,
+    // returns it once, and the user must change it at first login.
     password: z
-      .string({ error: "password is required" })
+      .string()
       .min(8, "password must be at least 8 characters")
-      .max(128, "password must be at most 128 characters"),
+      .max(128, "password must be at most 128 characters")
+      .optional(),
     role: z.enum(["student", "faculty", "admin"], {
       error: "role must be student, faculty or admin",
     }),
@@ -39,3 +42,15 @@ export const createUserSchema = z
       });
     }
   });
+
+export const listUsersQuerySchema = z.object({
+  role: z.enum(["student", "faculty", "admin"]).optional(),
+  isActive: z.enum(["true", "false"]).transform((v) => v === "true").optional(),
+  search: z.string().trim().max(100, "Search query must be 100 characters or fewer").optional(),
+  page: z.coerce.number().int().min(1).optional().default(1),
+  limit: z.coerce.number().int().min(1).max(200).optional().default(50),
+});
+
+export const setUserStatusSchema = z
+  .object({ isActive: z.boolean({ error: "isActive must be true or false" }) })
+  .strict();

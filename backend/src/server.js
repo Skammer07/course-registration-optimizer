@@ -9,6 +9,8 @@ import { connectDB, disconnectDB } from "./config/db.js";
 import { logger } from "./utils/logger.js";
 import { seedAdminIfNeeded } from "./services/auth.service.js";
 import app from "./app.js";
+import { startRunSweeper } from "./services/runMaintenance.service.js";
+import { cancelAllActiveRuns } from "./services/allocationEngine.service.js";
 
 async function start() {
   try {
@@ -18,6 +20,9 @@ async function start() {
     logger.fatal({ err: err.message }, "Failed to connect to MongoDB. Exiting.");
     process.exit(1);
   }
+
+  // Mark runs left "running" by a crash/restart as failed (now and every 5 minutes).
+  const stopSweeper = startRunSweeper();
 
   const server = app.listen(env.port, () => {
     logger.info(
@@ -32,6 +37,10 @@ async function start() {
   // ── Graceful shutdown ────────────────────────────────────────────────────
   async function shutdown(signal) {
     logger.info({ signal }, "Shutdown signal received. Closing server…");
+    stopSweeper();
+    // Stop running workers so their requests finish instead of blocking shutdown.
+    const stopped = cancelAllActiveRuns();
+    if (stopped > 0) logger.warn({ stopped }, "Stopped running allocation workers for shutdown");
     server.close(async () => {
       await disconnectDB();
       logger.info("Server shut down cleanly.");

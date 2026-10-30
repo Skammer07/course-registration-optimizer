@@ -32,6 +32,7 @@ import Preference from "../models/Preference.js";
 import Course from "../models/Course.js";
 import Student from "../models/Student.js";
 import { ApiError } from "../utils/ApiError.js";
+import { assertPreferencesOpen } from "./semester.service.js";
 
 /**
  * Validates that all course IDs in rankedCourseIds:
@@ -136,6 +137,9 @@ export async function upsertPreference(studentObjectId, data) {
         `Your permitted groups are: ${student.electiveGroups.join(", ")}.`
     );
   }
+
+  // Deadline: no edits (draft or submitted) outside the preference window.
+  await assertPreferencesOpen(semesterId);
 
   const uniqueIds = new Set(rankedCourseIds.map(String));
   if (uniqueIds.size !== rankedCourseIds.length) {

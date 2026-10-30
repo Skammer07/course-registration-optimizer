@@ -4,10 +4,10 @@
 
 import { Router } from "express";
 import rateLimit from "express-rate-limit";
-import { login, logout, me } from "../controllers/auth.controller.js";
-import { requireAuth } from "../middleware/auth.middleware.js";
+import { login, logout, me, changePassword } from "../controllers/auth.controller.js";
+import { requireAuthAllowPasswordChange } from "../middleware/auth.middleware.js";
 import { validate } from "../middleware/validate.middleware.js";
-import { loginSchema } from "../validators/auth.schema.js";
+import { loginSchema, changePasswordSchema } from "../validators/auth.schema.js";
 import { env } from "../config/env.js";
 
 const router = Router();
@@ -56,7 +56,24 @@ router.post("/logout", logout);
  *     security:
  *       - cookieAuth: []
  */
-router.get("/me", requireAuth, me);
+router.get("/me", requireAuthAllowPasswordChange, me);
+
+/**
+ * @openapi
+ * /api/v1/auth/change-password:
+ *   post:
+ *     summary: Change your own password (also the only action allowed with a temporary password)
+ *     tags: [Auth]
+ *     security:
+ *       - cookieAuth: []
+ */
+router.post(
+  "/change-password",
+  loginLimiter,
+  requireAuthAllowPasswordChange,
+  validate(changePasswordSchema),
+  changePassword
+);
 
 export default router;
 

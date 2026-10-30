@@ -58,6 +58,11 @@ const allocationSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    // Baseline merit iteration (1 or 2); null for random-phase and optimizer rows
+    iteration: {
+      type: Number,
+      default: null,
+    },
     status: {
       type: String,
       enum: { values: ["proposed", "published"], message: "Invalid status" },

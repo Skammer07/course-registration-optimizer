@@ -95,3 +95,35 @@ export async function seedAdminIfNeeded() {
   logger.info({ email: seedAdminEmail }, "Development admin account seeded");
 }
 
+
+/**
+ * Change the logged-in user's own password. Requires the current password,
+ * clears mustChangePassword and invalidates every older token (the caller
+ * receives a fresh one).
+ */
+export async function changeOwnPassword(userId, currentPassword, newPassword) {
+  const user = await User.findById(userId).select("+passwordHash role isActive").lean();
+  if (!user || !user.isActive) throw ApiError.unauthorized("User account is not available.");
+
+  let currentValid = false;
+  try {
+    currentValid = await argon2.verify(user.passwordHash, currentPassword);
+  } catch {
+    currentValid = false;
+  }
+  if (!currentValid) {
+    throw new ApiError(400, "The current password is incorrect.", "INVALID_CURRENT_PASSWORD");
+  }
+  if (newPassword === currentPassword) {
+    throw ApiError.badRequest("The new password must be different from the current one.");
+  }
+
+  const passwordHash = await hashPassword(newPassword);
+  await User.updateOne(
+    { _id: userId },
+    { $set: { passwordHash, mustChangePassword: false, passwordChangedAt: new Date() } }
+  );
+
+  logger.info({ userId }, "User changed their password");
+  return { token: signToken(user._id, user.role) };
+}

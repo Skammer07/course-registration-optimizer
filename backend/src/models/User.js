@@ -39,6 +39,17 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    // True after an admin created the login or reset the password: the user
+    // may only change their password until they have set their own.
+    mustChangePassword: {
+      type: Boolean,
+      default: false,
+    },
+    // Tokens issued before this moment are rejected (password changed/reset).
+    passwordChangedAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,

@@ -34,6 +34,8 @@ import Preference from "../models/Preference.js";
 import AllocationRun from "../models/AllocationRun.js";
 import Allocation from "../models/Allocation.js";
 import { runComparison, runSingle, fingerprintInput, prepareInputs } from "./allocationEngine.service.js";
+import { preferenceWindowWarning, closePreferencesAfterPublish } from "./semester.service.js";
+import { largeTimetableRunWarning } from "../utils/runAdvisories.js";
 import { validateRunForPublication } from "./publicationValidation.service.js";
 import { ApiError } from "../utils/ApiError.js";
 import { logger } from "../utils/logger.js";
@@ -91,6 +93,14 @@ export async function executeAllocationComparison({
   const prepared = prepareInputs({ students, courses, preferences, includeTimetable });
   preferences = prepared.preferences;
   const inputWarnings = prepared.warnings;
+  const windowWarning = await preferenceWindowWarning(semesterId);
+  if (windowWarning) inputWarnings.messages = [windowWarning, ...inputWarnings.messages];
+  const sizeWarning = largeTimetableRunWarning({
+    studentCount: students.length,
+    includeTimetable,
+    includesOptimizer: true,
+  });
+  if (sizeWarning) inputWarnings.messages = [...inputWarnings.messages, sizeWarning];
 
   // 2. Create a run record BEFORE calling the algorithm
   //    (so we can mark it as failed if anything below throws)
@@ -118,10 +128,11 @@ export async function executeAllocationComparison({
     } catch (cleanupErr) {
       logger.error({ runId: run._id, err: cleanupErr.message }, "Allocation cleanup failed");
     }
-    await AllocationRun.findByIdAndUpdate(run._id, {
-      status: "failed",
-      errorSummary: String(summary).slice(0, 2000),
-    });
+    // Conditional: a run an admin already cancelled must stay "cancelled".
+    await AllocationRun.updateOne(
+      { _id: run._id, status: "running" },
+      { $set: { status: "failed", errorSummary: String(summary).slice(0, 2000) } }
+    );
   };
 
   // 3. Invoke the algorithm. No database transaction or lock is held while
@@ -135,12 +146,24 @@ export async function executeAllocationComparison({
       preferences,
       includeTimetable,
       options: { maxCoursesPerStudent, meritRatio, randomRatio, seed },
+      runId: String(run._id),
     });
     const totalRuntimeMs = Number((performance.now() - startMs).toFixed(3));
     comparisonResult = { result, inputSnapshot, totalRuntimeMs };
   } catch (err) {
     await failRun(err.message);
     logger.error({ runId: run._id, err: err.message }, "Allocation run failed");
+    if (err.code === "ERR_WORKER_OUT_OF_MEMORY") {
+      throw new ApiError(
+        500,
+        "The allocation ran out of memory and was stopped. The run has been recorded as failed. " +
+          "Try a smaller dataset, or disable timetable validation.",
+        "ALLOCATION_OUT_OF_MEMORY"
+      );
+    }
+    if (err.code === "ALLOCATION_CANCELLED") {
+      throw new ApiError(409, "The allocation run was cancelled.", "ALLOCATION_CANCELLED");
+    }
     if (err.code === "ALLOCATION_TIMEOUT") {
       throw new ApiError(
         504,
@@ -201,6 +224,16 @@ export async function executeAllocationComparison({
           errorList: result.optimized.validation.errors.slice(0, 20),
         },
         comparison: result.comparison,
+        algorithmDetails: {
+          baseline: {
+            phaseSummary: result.baseline.phaseSummary ?? null,
+            assumptions: result.baseline.assumptions ?? null,
+          },
+          optimized: {
+            assumptions: result.optimized.assumptions ?? null,
+            totalPreferenceCost: result.optimized.totalPreferenceCost ?? null,
+          },
+        },
         baselineRuntimeMs: result.baseline.runtimeMs,
         optimizedRuntimeMs: result.optimized.runtimeMs,
         totalRuntimeMs: comparisonResult.totalRuntimeMs,
@@ -280,6 +313,14 @@ export async function executeSingleAllocation({
   const prepared = prepareInputs({ students, courses, preferences, includeTimetable });
   preferences = prepared.preferences;
   const inputWarnings = prepared.warnings;
+  const windowWarning = await preferenceWindowWarning(semesterId);
+  if (windowWarning) inputWarnings.messages = [windowWarning, ...inputWarnings.messages];
+  const sizeWarning = largeTimetableRunWarning({
+    studentCount: students.length,
+    includeTimetable,
+    includesOptimizer: algorithm === "optimized",
+  });
+  if (sizeWarning) inputWarnings.messages = [...inputWarnings.messages, sizeWarning];
 
   const run = await AllocationRun.create({
     semesterId,
@@ -309,10 +350,11 @@ export async function executeSingleAllocation({
     } catch (cleanupErr) {
       logger.error({ runId: run._id, err: cleanupErr.message }, "Allocation cleanup failed");
     }
-    await AllocationRun.findByIdAndUpdate(run._id, {
-      status: "failed",
-      errorSummary: String(summary).slice(0, 2000),
-    });
+    // Conditional: a run an admin already cancelled must stay "cancelled".
+    await AllocationRun.updateOne(
+      { _id: run._id, status: "running" },
+      { $set: { status: "failed", errorSummary: String(summary).slice(0, 2000) } }
+    );
   };
 
   let computed;
@@ -325,6 +367,7 @@ export async function executeSingleAllocation({
       preferences,
       includeTimetable,
       options: { maxCoursesPerStudent, meritRatio: merit ?? undefined, randomRatio: random ?? undefined, seed },
+      runId: String(run._id),
     });
     computed = {
       result,
@@ -334,6 +377,17 @@ export async function executeSingleAllocation({
   } catch (err) {
     await failRun(err.message);
     logger.error({ runId: run._id, err: err.message }, "Single-algorithm run failed");
+    if (err.code === "ERR_WORKER_OUT_OF_MEMORY") {
+      throw new ApiError(
+        500,
+        "The allocation ran out of memory and was stopped. The run has been recorded as failed. " +
+          "Try a smaller dataset, or disable timetable validation.",
+        "ALLOCATION_OUT_OF_MEMORY"
+      );
+    }
+    if (err.code === "ALLOCATION_CANCELLED") {
+      throw new ApiError(409, "The allocation run was cancelled.", "ALLOCATION_CANCELLED");
+    }
     if (err.code === "ALLOCATION_TIMEOUT") {
       throw new ApiError(
         504,
@@ -378,6 +432,13 @@ export async function executeSingleAllocation({
           errorList: result.validation.errors.slice(0, 20),
         },
         [`${prefix}RuntimeMs`]: result.runtimeMs,
+        algorithmDetails: {
+          [prefix]: {
+            phaseSummary: result.phaseSummary ?? null,
+            assumptions: result.assumptions ?? null,
+            totalPreferenceCost: result.totalPreferenceCost ?? null,
+          },
+        },
         totalRuntimeMs: computed.totalRuntimeMs,
         inputSnapshot: {
           studentCount: inputSnapshot.algStudents.length,
@@ -540,6 +601,7 @@ export function buildAllocationDocs(runId, algorithm, algResult, studentMap, cou
         algorithm,
         preferenceRank: a.preferenceRank,
         phase: a.phase ?? null,
+        iteration: Number.isInteger(a.iteration) ? a.iteration : null,
         status: "proposed",
       });
     }
@@ -606,19 +668,43 @@ export async function getAllocationRunById(runId) {
 /**
  * Get paginated assignment records for a run.
  */
-export async function getRunResults(runId, { algorithm, page, limit }) {
+export async function getRunResults(
+  runId,
+  { algorithm, phase, rank, courseCode, studentId, sort = "default", page, limit }
+) {
   const run = await AllocationRun.findById(runId).lean();
   if (!run) throw ApiError.notFound("Allocation run");
 
   const filter = { run: new mongoose.Types.ObjectId(runId) };
   if (algorithm) filter.algorithm = algorithm;
+  if (phase) filter.phase = phase;
+  if (rank) filter.preferenceRank = rank;
+
+  const empty = { run, allocations: [], total: 0, page, limit, totalPages: 0 };
+  if (studentId) {
+    const student = await Student.findOne({ studentId: studentId.toUpperCase() }).select("_id").lean();
+    if (!student) return empty;
+    filter.student = student._id;
+  }
+  if (courseCode) {
+    const course = await Course.findOne({ courseCode, semesterId: run.semesterId }).select("_id").lean();
+    if (!course) return empty;
+    filter.course = course._id;
+  }
+
+  const sorts = {
+    default: { algorithm: 1, preferenceRank: 1, _id: 1 },
+    rank: { preferenceRank: 1, algorithm: 1, _id: 1 },
+    "-rank": { preferenceRank: -1, algorithm: 1, _id: 1 },
+    phase: { phase: 1, preferenceRank: 1, _id: 1 },
+  };
 
   const skip = (page - 1) * limit;
   const [allocations, total] = await Promise.all([
     Allocation.find(filter)
       .populate("student", "studentId name cgpa department")
       .populate("course", "courseCode title capacity electiveGroup")
-      .sort({ algorithm: 1, preferenceRank: 1 })
+      .sort(sorts[sort] ?? sorts.default)
       .skip(skip)
       .limit(limit)
       .lean(),
@@ -802,6 +888,8 @@ export async function publishAllocationRun(runId, publishedByUserId, algorithm) 
       { new: true }
     ).lean();
     if (!finalized) throw new Error("Run was no longer in the publishing state.");
+
+    await closePreferencesAfterPublish(finalized.semesterId);
 
     logger.info({ runId, algorithm, publishedBy: publishedByUserId }, "Allocation run published");
     return finalized;

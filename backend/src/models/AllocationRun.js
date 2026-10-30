@@ -82,7 +82,7 @@ const allocationRunSchema = new mongoose.Schema(
         // "publishing" is the short-lived claimed state of the publication
         // state machine: completed -> publishing -> published (or back to
         // completed if finalization fails).
-        values: ["pending", "running", "completed", "failed", "publishing", "published"],
+        values: ["pending", "running", "completed", "failed", "cancelled", "publishing", "published"],
         message: "Invalid status",
       },
       default: "pending",
@@ -120,6 +120,9 @@ const allocationRunSchema = new mongoose.Schema(
       validComparison: { type: Boolean, default: null },
       note: { type: String, default: null },
     },
+    // Policy details per algorithm, so a result can state what was and was not
+    // enforced: { baseline: { phaseSummary, assumptions }, optimized: { assumptions, totalPreferenceCost } }
+    algorithmDetails: { type: mongoose.Schema.Types.Mixed, default: null },
     // Runtime information
     baselineRuntimeMs: { type: Number, default: null },
     optimizedRuntimeMs: { type: Number, default: null },

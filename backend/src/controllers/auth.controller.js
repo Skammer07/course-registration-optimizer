@@ -3,7 +3,7 @@
  */
 
 import { asyncHandler } from "../utils/asyncHandler.js";
-import { loginUser } from "../services/auth.service.js";
+import { loginUser, changeOwnPassword } from "../services/auth.service.js";
 import { success } from "../utils/respond.js";
 import { env } from "../config/env.js";
 import { durationToMs } from "../utils/duration.js";
@@ -31,6 +31,14 @@ export const logout = asyncHandler(async (_req, res) => {
     secure: env.isProduction,
   });
   return success(res, null, "Logged out successfully");
+});
+
+export const changePassword = asyncHandler(async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+  const { token } = await changeOwnPassword(req.user._id, currentPassword, newPassword);
+  // The old token is now invalid; hand back a fresh one.
+  res.cookie("token", token, COOKIE_OPTIONS);
+  return success(res, null, "Password changed");
 });
 
 export const me = asyncHandler(async (req, res) => {

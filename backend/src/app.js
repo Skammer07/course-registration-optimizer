@@ -24,15 +24,21 @@ import courseRouter from "./routes/course.routes.js";
 import preferenceRouter from "./routes/preference.routes.js";
 import allocationRouter from "./routes/allocation.routes.js";
 import userRouter from "./routes/user.routes.js";
+import semesterRouter from "./routes/semester.routes.js";
+import importRouter from "./routes/import.routes.js";
 
 import { notFoundHandler } from "./middleware/notFound.middleware.js";
 import { errorHandler } from "./middleware/error.middleware.js";
+import { requestId } from "./middleware/requestId.middleware.js";
 
 const app = express();
 
 // Behind a reverse proxy, trust it so req.ip (used by rate limiting) is the
 // real client address. 0 = not behind a proxy.
 if (env.trustProxy) app.set("trust proxy", env.trustProxy);
+
+// ── Request id (tracing): header on every response, "requestId" on errors ──
+app.use(requestId);
 
 // ── Security headers ───────────────────────────────────────────────────────
 app.use(
@@ -47,7 +53,8 @@ app.use(
     origin: env.clientOrigin,
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Request-Id"],
+    exposedHeaders: ["X-Request-Id", "Content-Disposition"],
   })
 );
 
@@ -56,6 +63,7 @@ if (!env.isTest) {
   app.use(
     pinoHttp({
       logger,
+      genReqId: (req) => req.id,
       redact: ["req.headers.authorization", "req.headers.cookie"],
       customSuccessMessage(req, res) {
         return `${req.method} ${req.url} ${res.statusCode}`;
@@ -129,6 +137,8 @@ app.use("/api/v1/courses", courseRouter);
 app.use("/api/v1/preferences", preferenceRouter);
 app.use("/api/v1/allocations", allocationRouter);
 app.use("/api/v1/users", userRouter);
+app.use("/api/v1/semesters", semesterRouter);
+app.use("/api/v1/imports", importRouter);
 
 // ── 404 and error handling ─────────────────────────────────────────────────
 app.use(notFoundHandler);

@@ -55,6 +55,7 @@ async function importAlgorithm(relativePath) {
 }
 
 const DEFAULT_TIMEOUT_MS = 60_000;
+const DEFAULT_WORKER_MAX_MB = 1024;
 const workerFile = new URL("./algorithmWorker.js", import.meta.url);
 
 /**
@@ -64,17 +65,63 @@ const workerFile = new URL("./algorithmWorker.js", import.meta.url);
  * terminated and the promise rejects with code ALLOCATION_TIMEOUT.
  * Limit: ALLOCATION_TIMEOUT_MS (default 60000).
  */
-function runInWorker(kind, input, options) {
+// Workers of runs that are executing right now in THIS process, so an admin can
+// cancel one. (Per-process: a multi-instance deployment would need shared state.)
+const activeWorkers = new Map();
+
+/**
+ * Stop the worker of a running run. Returns true when a worker was stopped
+ * (the pending run call then rejects with code ALLOCATION_CANCELLED).
+ */
+export function cancelActiveRun(runId) {
+  const entry = activeWorkers.get(String(runId));
+  if (!entry) return false;
+  entry.cancel();
+  return true;
+}
+
+/** Number of runs computing right now in this process. */
+export function getActiveRunCount() {
+  return activeWorkers.size;
+}
+
+/** Stop every running worker (used at shutdown). Returns how many were stopped. */
+export function cancelAllActiveRuns() {
+  const ids = [...activeWorkers.keys()];
+  for (const id of ids) cancelActiveRun(id);
+  return ids.length;
+}
+
+/**
+ * Is the algorithm package loadable, and which version is it? Used by /health.
+ * @returns {Promise<{ available: boolean, version: string|null }>}
+ */
+export async function getAlgorithmInfo() {
+  try {
+    const mod = await getComparisonService();
+    return { available: true, version: mod.ALGORITHM_VERSION ?? null };
+  } catch {
+    return { available: false, version: null };
+  }
+}
+
+function runInWorker(kind, input, options, runId = null) {
   const limit = Number(process.env.ALLOCATION_TIMEOUT_MS) || DEFAULT_TIMEOUT_MS;
   return new Promise((resolve, reject) => {
+    // Memory cap: the optimizer's search keeps every explored state, so a
+    // runaway search must hit this limit (ERR_WORKER_OUT_OF_MEMORY) instead of
+    // taking the API process down with it.
+    const maxMb = Number(process.env.ALLOCATION_WORKER_MAX_MB) || DEFAULT_WORKER_MAX_MB;
     const worker = new Worker(workerFile, {
       workerData: { kind, algorithmRoot, input, options },
+      resourceLimits: { maxOldGenerationSizeMb: maxMb },
     });
     let settled = false;
     const finish = (fn, value) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      if (runId) activeWorkers.delete(String(runId));
       worker.terminate();
       fn(value);
     };
@@ -83,6 +130,15 @@ function runInWorker(kind, input, options) {
       err.code = "ALLOCATION_TIMEOUT";
       finish(reject, err);
     }, limit);
+    if (runId) {
+      activeWorkers.set(String(runId), {
+        cancel: () => {
+          const err = new Error("The allocation was cancelled.");
+          err.code = "ALLOCATION_CANCELLED";
+          finish(reject, err);
+        },
+      });
+    }
     worker.once("message", (m) => (m.ok ? finish(resolve, m.result) : finish(reject, new Error(m.error))));
     worker.once("error", (e) => finish(reject, e));
     worker.once("exit", (code) => finish(reject, new Error(`Allocation worker exited unexpectedly (code ${code}).`)));
@@ -354,6 +410,7 @@ export async function runComparison({
   preferences,
   includeTimetable = true,
   options = {},
+  runId = null,
 }) {
   const snapshot = buildInput({ students, courses, preferences, includeTimetable });
   const input = {
@@ -370,7 +427,7 @@ export async function runComparison({
     const { runAllocationComparison } = await getComparisonService();
     result = runAllocationComparison(structuredClone(input), buildOptions(options));
   } else {
-    result = await runInWorker("comparison", input, buildOptions(options));
+    result = await runInWorker("comparison", input, buildOptions(options), runId);
   }
 
   return { result, inputSnapshot: snapshot };
@@ -388,6 +445,7 @@ export async function runSingle({
   preferences,
   includeTimetable = true,
   options = {},
+  runId = null,
 }) {
   const snapshot = buildInput({ students, courses, preferences, includeTimetable });
   const input = {
@@ -403,8 +461,32 @@ export async function runSingle({
     const { runSingleAllocation } = await getSingleService();
     result = runSingleAllocation(structuredClone(input), singleOptions);
   } else {
-    result = await runInWorker("single", input, singleOptions);
+    result = await runInWorker("single", input, singleOptions, runId);
   }
 
   return { result, inputSnapshot: snapshot };
+}
+
+/**
+ * Re-run ONE algorithm from a stored run's normalized snapshot (replay check).
+ * No database access; uses the same worker and time limit as a normal run.
+ *
+ * @param {object} params
+ * @param {"baseline"|"optimized"} params.algorithm
+ * @param {{students: object[], courses: object[], preferences: object[], timetable: object|null}} params.snapshot
+ * @param {object} params.options  maxCoursesPerStudent, meritRatio, randomRatio, seed
+ */
+export async function runFromSnapshot({ algorithm, snapshot, options = {} }) {
+  const input = structuredClone({
+    students: snapshot.students,
+    courses: snapshot.courses,
+    preferences: snapshot.preferences,
+    timetable: snapshot.timetable ?? null,
+  });
+  const singleOptions = { ...options, algorithm };
+  if (_singleOverridden) {
+    const { runSingleAllocation } = await getSingleService();
+    return runSingleAllocation(input, singleOptions);
+  }
+  return runInWorker("single", input, singleOptions);
 }

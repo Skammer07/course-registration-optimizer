@@ -12,13 +12,33 @@ import {
   compareRunsQuerySchema,
   runQuerySchema,
   runResultsQuerySchema,
+  byStudentQuerySchema,
+  byCourseQuerySchema,
+  verifyRunQuerySchema,
+  exportRunQuerySchema,
   publishAllocationSchema,
 } from "../validators/allocation.schema.js";
 import * as ctrl from "../controllers/allocation.controller.js";
+import * as publishedCtrl from "../controllers/publishedResults.controller.js";
+import * as viewsCtrl from "../controllers/runViews.controller.js";
+import * as adminCtrl from "../controllers/runAdmin.controller.js";
 
 const router = Router();
 
 router.use(requireAuth);
+
+/**
+ * GET /api/v1/allocations/my-results
+ * The logged-in student's own PUBLISHED assignments. Students only.
+ */
+router.get("/my-results", requireRole("student"), publishedCtrl.myResults);
+
+/**
+ * GET /api/v1/allocations/published?semesterId=
+ * Which run (algorithm, publish date) is published for a semester.
+ * Any logged-in user; students are limited to their own semester.
+ */
+router.get("/published", publishedCtrl.publishedRun);
 
 /**
  * POST /api/v1/allocations/compare
@@ -71,6 +91,46 @@ router.get(
  * Get a single allocation run summary.
  */
 router.get("/runs/:runId", requireRole("admin", "faculty"), ctrl.getRun);
+
+/**
+ * Dashboard views (admin/faculty): summary, results by student, results by course.
+ */
+router.get("/runs/:runId/summary", requireRole("admin", "faculty"), viewsCtrl.summary);
+router.get(
+  "/runs/:runId/results/by-student",
+  requireRole("admin", "faculty"),
+  validate(byStudentQuerySchema, "query"),
+  viewsCtrl.byStudent
+);
+router.get(
+  "/runs/:runId/results/by-course",
+  requireRole("admin", "faculty"),
+  validate(byCourseQuerySchema, "query"),
+  viewsCtrl.byCourse
+);
+
+/**
+ * CSV export of one algorithm's assignments (admin/faculty).
+ */
+router.get(
+  "/runs/:runId/export",
+  requireRole("admin", "faculty"),
+  validate(exportRunQuerySchema, "query"),
+  viewsCtrl.exportCsv
+);
+
+/**
+ * Run management (admin): cancel a running run, delete an unpublished run,
+ * and verify (replay) a run against its stored snapshot.
+ */
+router.post("/runs/:runId/cancel", requireRole("admin"), adminCtrl.cancel);
+router.delete("/runs/:runId", requireRole("admin"), adminCtrl.remove);
+router.post(
+  "/runs/:runId/verify",
+  requireRole("admin"),
+  validate(verifyRunQuerySchema, "query"),
+  adminCtrl.verify
+);
 
 /**
  * GET /api/v1/allocations/runs/:runId/results

@@ -9,6 +9,7 @@
     "start": "node src/server.js",
     "test": "vitest run",
     "seed": "node scripts/seed.js",
+    "create-admin": "node scripts/create-admin.js",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage"
   },

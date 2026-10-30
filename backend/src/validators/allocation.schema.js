@@ -112,7 +112,7 @@ export const compareRunsQuerySchema = z.object({
 export const runQuerySchema = z.object({
   semesterId: z.string().trim().optional(),
   status: z
-    .enum(["pending", "running", "completed", "failed", "publishing", "published"])
+    .enum(["pending", "running", "completed", "failed", "cancelled", "publishing", "published"])
     .optional(),
   page: z.coerce.number().int().min(1).optional().default(1),
   limit: z.coerce.number().int().min(1).max(100).optional().default(20),
@@ -121,8 +121,44 @@ export const runQuerySchema = z.object({
 
 export const runResultsQuerySchema = z.object({
   algorithm: z.enum(["baseline", "optimized"]).optional(),
+  // Optional filters: baseline phase, preference rank, one course, one student
+  phase: z.enum(["merit", "random"]).optional(),
+  rank: z.coerce.number().int().min(1).optional(),
+  courseCode: z.string().trim().min(1).max(50).optional(),
+  studentId: z.string().trim().min(1).max(50).optional(),
+  // default: algorithm then rank; "rank" / "-rank": by preference rank; "phase"
+  sort: z.enum(["default", "rank", "-rank", "phase"]).optional().default("default"),
   page: z.coerce.number().int().min(1).optional().default(1),
   limit: z.coerce.number().int().min(1).max(500).optional().default(100),
+});
+
+/** Replay check: verify one algorithm, or both when omitted. */
+export const verifyRunQuerySchema = z.object({
+  algorithm: algorithmEnum.optional(),
+});
+
+/** CSV export of one algorithm's assignments. */
+export const exportRunQuerySchema = z.object({
+  algorithm: algorithmEnum.optional(),
+});
+
+/** Dashboard views (admin/faculty). algorithm may be omitted when the run is published or holds one algorithm. */
+export const byStudentQuerySchema = z.object({
+  algorithm: algorithmEnum.optional(),
+  search: z.string().trim().max(100).optional(),
+  status: z.enum(["all", "allocated", "unallocated"]).optional().default("all"),
+  sort: z.enum(["studentId", "name", "cgpa", "coursesAllocated", "averageRank"]).optional().default("studentId"),
+  page: z.coerce.number().int().min(1).optional().default(1),
+  limit: z.coerce.number().int().min(1).max(200).optional().default(50),
+});
+
+export const byCourseQuerySchema = z.object({
+  algorithm: algorithmEnum.optional(),
+  search: z.string().trim().max(100).optional(),
+  sort: z.enum(["courseCode", "utilization", "assignedCount", "demand"]).optional().default("courseCode"),
+  includeStudents: z.enum(["true", "false"]).transform((v) => v === "true").optional().default(true),
+  page: z.coerce.number().int().min(1).optional().default(1),
+  limit: z.coerce.number().int().min(1).max(200).optional().default(50),
 });
 
 /**
