@@ -1,0 +1,548 @@
+{
+  "info": {
+    "_postman_id": "course-registration-api-v1",
+    "name": "Course Registration Optimization API",
+    "description": "Postman collection for the IIT (ISM) Dhanbad Course Registration Optimization backend.\n\nSet the `baseUrl` variable before use. Authentication uses HTTP-only cookies managed automatically by Postman.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000",
+      "type": "string"
+    },
+    {
+      "key": "semesterId",
+      "value": "SEM2026A",
+      "type": "string"
+    },
+    {
+      "key": "runId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "studentId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "courseId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/health",
+            "description": "Returns application health and database connectivity status."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\": \"admin@example.com\", \"password\": \"your_password_here\"}"
+            },
+            "description": "Authenticates the user. Sets a secure HTTP-only cookie on success."
+          }
+        },
+        {
+          "name": "Get Current User",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/auth/me",
+            "description": "Returns the currently authenticated user. Requires cookie."
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/auth/logout",
+            "description": "Clears the authentication cookie."
+          }
+        },
+        {
+          "name": "Login - Invalid Password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\": \"admin@example.com\", \"password\": \"wrong\"}"
+            }
+          }
+        },
+        {
+          "name": "Login - Missing Email",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"password\": \"somepassword\"}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Students",
+      "item": [
+        {
+          "name": "List Students (Admin/Faculty only)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/students?semesterId={{semesterId}}&page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "students"
+              ],
+              "query": [
+                {
+                  "key": "semesterId",
+                  "value": "{{semesterId}}"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Requires admin or faculty role. Students cannot enumerate the full student list (returns 403)."
+          }
+        },
+        {
+          "name": "Get Student by ID",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/students/{{studentId}}"
+          }
+        },
+        {
+          "name": "Create Student",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/students",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"studentId\": \"20JE0001\",\n  \"name\": \"Aarav Kumar\",\n  \"cgpa\": 9.5,\n  \"department\": \"CSE\",\n  \"semesterId\": \"{{semesterId}}\",\n  \"electiveGroups\": [\"A\"]\n}"
+            }
+          }
+        },
+        {
+          "name": "Update Student",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/students/{{studentId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"cgpa\": 9.2}"
+            }
+          }
+        },
+        {
+          "name": "Deactivate Student",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/api/v1/students/{{studentId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Courses",
+      "item": [
+        {
+          "name": "List Courses",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/courses?semesterId={{semesterId}}&isActive=true",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "courses"
+              ],
+              "query": [
+                {
+                  "key": "semesterId",
+                  "value": "{{semesterId}}"
+                },
+                {
+                  "key": "isActive",
+                  "value": "true"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Course by ID",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/courses/{{courseId}}"
+          }
+        },
+        {
+          "name": "Create Course",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/courses",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"courseCode\": \"CS301\",\n  \"title\": \"Data Structures\",\n  \"capacity\": 60,\n  \"semesterId\": \"{{semesterId}}\",\n  \"electiveGroup\": \"A\",\n  \"timetableSlots\": [{\"day\": \"Monday\", \"start\": \"09:00\", \"end\": \"09:50\"}]\n}"
+            }
+          }
+        },
+        {
+          "name": "Update Course",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/courses/{{courseId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"capacity\": 65}"
+            }
+          }
+        },
+        {
+          "name": "Deactivate Course",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/api/v1/courses/{{courseId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Preferences",
+      "item": [
+        {
+          "name": "Get My Preferences",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/preferences/me?semesterId={{semesterId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "preferences",
+                "me"
+              ],
+              "query": [
+                {
+                  "key": "semesterId",
+                  "value": "{{semesterId}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Submit My Preferences",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/preferences/me",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"semesterId\": \"{{semesterId}}\",\n  \"electiveGroup\": \"A\",\n  \"rankedCourseIds\": [\"<course-object-id-1>\", \"<course-object-id-2>\"],\n  \"status\": \"submitted\"\n}"
+            }
+          }
+        },
+        {
+          "name": "List All Preferences (Admin)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/preferences?semesterId={{semesterId}}&status=submitted",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "preferences"
+              ],
+              "query": [
+                {
+                  "key": "semesterId",
+                  "value": "{{semesterId}}"
+                },
+                {
+                  "key": "status",
+                  "value": "submitted"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Allocations",
+      "item": [
+        {
+          "name": "Run Allocation Comparison",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/allocations/compare",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"semesterId\": \"{{semesterId}}\",\n  \"maxCoursesPerStudent\": 2,\n  \"meritRatio\": 0.75,\n  \"randomRatio\": 0.25,\n  \"includeTimetable\": true,\n  \"seed\": 12345\n}"
+            },
+            "description": "Admin only. Loads data from DB, runs both algorithms, persists the run. meritRatio + randomRatio must equal exactly 1.0 (e.g. 0.75 + 0.25; 0/1 and 1/0 are valid). Returns 400 otherwise. Optional seed (integer) makes the baseline lottery reproducible; it is stored on the run."
+          }
+        },
+        {
+          "name": "Run ONE algorithm - baseline",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/allocations/run",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"semesterId\": \"{{semesterId}}\",\n  \"algorithm\": \"baseline\",\n  \"maxCoursesPerStudent\": 2,\n  \"meritRatio\": 0.75,\n  \"randomRatio\": 0.25,\n  \"includeTimetable\": true,\n  \"seed\": 12345\n}"
+            },
+            "description": "Admin only. Runs only the baseline (merit + random). meritRatio/randomRatio must sum to 1; seed makes the lottery reproducible."
+          }
+        },
+        {
+          "name": "Run ONE algorithm - optimized",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/allocations/run",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"semesterId\": \"{{semesterId}}\",\n  \"algorithm\": \"optimized\",\n  \"maxCoursesPerStudent\": 2,\n  \"includeTimetable\": true\n}"
+            },
+            "description": "Admin only. Runs only the min-cost max-flow optimizer. Ratios and seed are not accepted for the optimizer."
+          }
+        },
+        {
+          "name": "Compare two runs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/allocations/runs/compare?runA={{runId}}&runB={{runIdB}}",
+            "description": "Admin/faculty. Side-by-side metrics and differences (B minus A). Add algorithmA/algorithmB for runs that contain both algorithms. Warnings flag differing input data."
+          }
+        },
+        {
+          "name": "List Allocation Runs",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/allocations/runs?semesterId={{semesterId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "allocations",
+                "runs"
+              ],
+              "query": [
+                {
+                  "key": "semesterId",
+                  "value": "{{semesterId}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Allocation Run",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/allocations/runs/{{runId}}"
+          }
+        },
+        {
+          "name": "Get Run Results",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/allocations/runs/{{runId}}/results?algorithm=optimized&page=1&limit=100",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "allocations",
+                "runs",
+                "{{runId}}",
+                "results"
+              ],
+              "query": [
+                {
+                  "key": "algorithm",
+                  "value": "optimized"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "100"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Publish Allocation Run (optimized)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/allocations/runs/{{runId}}/publish",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"algorithm\": \"optimized\"}"
+            },
+            "description": "Admin only. Publishes the optimized algorithm's assignments for the run. Only the selected algorithm's records are marked published; the baseline records remain available for comparison. The stored assignments are re-validated first (422 PUBLICATION_VALIDATION_FAILED on any violation). Switching the algorithm after an initial publish, or losing a concurrent publish race, returns 409 Conflict; repeating the same algorithm is idempotent."
+          }
+        },
+        {
+          "name": "Publish Allocation Run (baseline)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/allocations/runs/{{runId}}/publish",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"algorithm\": \"baseline\"}"
+            },
+            "description": "Admin only. Publishes the baseline algorithm's assignments for the run. Use this variant to officially release the baseline results instead of the optimized ones."
+          }
+        },
+        {
+          "name": "Publish Allocation Run - Missing algorithm (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/allocations/runs/{{runId}}/publish",
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "description": "Demonstrates that omitting the 'algorithm' field returns 400 Bad Request."
+          }
+        }
+      ]
+    }
+  ]
+}

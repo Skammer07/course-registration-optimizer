@@ -19,11 +19,12 @@ export function allocateMeritPhase(
 
   if (
     !Number.isFinite(meritRatio) ||
-    meritRatio <= 0 ||
+    meritRatio < 0 ||
     meritRatio > 1
   ) {
+    // 0 is valid: no merit seats, every seat is left to the random phase.
     throw new Error(
-      "meritRatio must be greater than 0 and at most 1"
+      "meritRatio must be between 0 and 1 (inclusive)"
     );
   }
 

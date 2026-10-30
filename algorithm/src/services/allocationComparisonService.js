@@ -5,6 +5,13 @@ import { runAllocation } from "../algorithms/allocationPipeline.js";
 import { allocateOptimized } from "../algorithms/optimizedAllocation.js";
 import { validateAllocation } from "../validation/validateAllocation.js";
 import { compareAllocations } from "../evaluation/compare.js";
+import { createSeededRandom, generateSeed } from "../utils/seededRandom.js";
+
+/**
+ * Bump when allocation behavior changes, so a stored run records which
+ * version of the algorithms produced it.
+ */
+export const ALGORITHM_VERSION = "1.1.0";
 
 const DEFAULT_MAX_COURSES_PER_STUDENT = 2;
 
@@ -70,6 +77,22 @@ export function runAllocationComparison(input, options = {}) {
     throw new Error("randomRatio must be between 0 and 1.");
   }
 
+  // meritRatio is the share of each course's seats given by CGPA merit;
+  // randomRatio is the share given by lottery. Together they must cover the
+  // full capacity. 0/1 and 1/0 are both valid boundary configurations.
+  if (Math.abs(meritRatio + randomRatio - 1) > 1e-9) {
+    throw new Error("meritRatio and randomRatio must sum to 1.");
+  }
+
+  // Reproducible randomness: an explicit random function wins; otherwise a
+  // seeded generator is used and the seed is reported back in the result.
+  let randomSeed = null;
+  let random = options.random;
+  if (random === undefined) {
+    randomSeed = options.seed ?? generateSeed();
+    random = createSeededRandom(randomSeed);
+  }
+
   const sharedOptions = {
     maxCoursesPerStudent,
     timetable,
@@ -83,7 +106,7 @@ export function runAllocationComparison(input, options = {}) {
         ...sharedOptions,
         meritRatio,
         randomRatio,
-        random: options.random ?? Math.random,
+        random,
       }
     )
   );
@@ -150,6 +173,8 @@ export function runAllocationComparison(input, options = {}) {
       maxCoursesPerStudent,
       meritRatio,
       randomRatio,
+      randomSeed,
+      algorithmVersion: ALGORITHM_VERSION,
       timetableValidationEnabled: Boolean(timetable),
     },
 
