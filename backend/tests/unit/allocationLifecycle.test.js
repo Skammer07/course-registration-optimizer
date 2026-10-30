@@ -112,6 +112,14 @@ vi.mock("../../src/models/Allocation.js", () => ({
   },
 }));
 
+// Semester: no record => preferences open (default behaviour)
+vi.mock("../../src/models/Semester.js", () => ({
+  default: {
+    findOne: () => ({ lean: async () => null }),
+    updateOne: async () => ({}),
+  },
+}));
+
 vi.mock("../../src/models/Student.js", () => ({
   default: {
     find: (filter) => ({
@@ -376,6 +384,34 @@ describe("executeAllocationComparison - persistence and consistency", () => {
     await expect(executeAllocationComparison(params)).rejects.toMatchObject({ code: "ALLOCATION_FAILED" });
     expect(db.run.status).toBe("failed");
     expect(db.run.errorSummary).toBe("boom");
+    expect(db.allocations).toHaveLength(0);
+  });
+
+  it("a cancelled run answers 409, keeps status cancelled (not overwritten with failed) and stores nothing", async () => {
+    useFake(() => {
+      // the admin cancels while the algorithm is running, then the worker is stopped
+      db.run.status = "cancelled";
+      db.run.errorSummary = "Cancelled by an administrator.";
+      throw Object.assign(new Error("The allocation was cancelled."), { code: "ALLOCATION_CANCELLED" });
+    });
+    await expect(executeAllocationComparison(params)).rejects.toMatchObject({
+      statusCode: 409,
+      code: "ALLOCATION_CANCELLED",
+    });
+    expect(db.run.status).toBe("cancelled");
+    expect(db.run.errorSummary).toBe("Cancelled by an administrator.");
+    expect(db.allocations).toHaveLength(0);
+  });
+
+  it("a cancel that lands after the algorithm finished still ends with no assignments", async () => {
+    useFake(() => {
+      const res = fakeResult();
+      // cancel arrives during persistence: status flips before the final conditional update
+      queueMicrotask(() => { db.run.status = "cancelled"; });
+      return res;
+    });
+    await expect(executeAllocationComparison(params)).rejects.toMatchObject({ code: expect.stringMatching(/PERSISTENCE_FAILED|ALLOCATION_CANCELLED/) });
+    expect(db.run.status).toBe("cancelled");
     expect(db.allocations).toHaveLength(0);
   });
 

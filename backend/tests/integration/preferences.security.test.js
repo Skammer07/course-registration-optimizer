@@ -58,6 +58,14 @@ vi.mock("../../src/models/User.js", () => ({
 }));
 
 const mockStudentFindByIdLean = vi.fn();
+// Semester: no record => preferences open (default behaviour)
+vi.mock("../../src/models/Semester.js", () => ({
+  default: {
+    findOne: () => ({ lean: async () => null }),
+    updateOne: async () => ({}),
+  },
+}));
+
 vi.mock("../../src/models/Student.js", () => ({
   default: {
     findById: vi.fn().mockReturnValue({ lean: mockStudentFindByIdLean }),

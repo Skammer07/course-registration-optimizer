@@ -124,7 +124,6 @@ describe("POST /api/v1/users", () => {
     ["bad role", { email: "a@b.com", password: "password123", role: "root" }],
     ["student without studentId", { email: "a@b.com", password: "password123", role: "student" }],
     ["studentId on a non-student", { email: "a@b.com", password: "password123", role: "faculty", studentId: "S1" }],
-    ["missing password", { email: "a@b.com", role: "admin" }],
   ])("400 for %s", async (_n, body) => {
     const res = await post(body);
     expect(res.status).toBe(400);

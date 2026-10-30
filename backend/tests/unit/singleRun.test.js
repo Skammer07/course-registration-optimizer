@@ -90,6 +90,14 @@ vi.mock("../../src/models/Allocation.js", () => ({
   },
 }));
 
+// Semester: no record => preferences open (default behaviour)
+vi.mock("../../src/models/Semester.js", () => ({
+  default: {
+    findOne: () => ({ lean: async () => null }),
+    updateOne: async () => ({}),
+  },
+}));
+
 vi.mock("../../src/models/Student.js", () => ({
   default: {
     find: (f) => ({
@@ -353,6 +361,50 @@ describe("stale data, warnings and time limits at the service level", () => {
   it("clean data records zero warnings", async () => {
     const run = await executeSingleAllocation({ ...base, algorithm: "baseline", seed: 1 });
     expect(run.inputWarnings).toMatchObject({ skippedPreferences: 0, droppedCourseEntries: 0, messages: [] });
+  });
+
+  describe("large timetable runs get an advisory (never a block)", () => {
+    const addStudents = (total) => {
+      for (let i = db.students.length; i < total; i++) {
+        db.students.push({ _id: hex(1000 + i), studentId: `X${i}`, name: `X${i}`, cgpa: 6, semesterId: "SEM1" });
+      }
+    };
+    const advisory = (run) => run.inputWarnings.messages.filter((m) => /timetable search can be/.test(m));
+
+    it("warns for the optimizer and for a combined run, with the student count", async () => {
+      addStudents(150);
+      const opt = await executeSingleAllocation({ ...base, algorithm: "optimized" });
+      expect(opt.status).toBe("completed");
+      expect(advisory(opt)).toHaveLength(1);
+      expect(advisory(opt)[0]).toMatch(/150 students/);
+
+      const both = await executeAllocationComparison({ ...base, seed: 1 });
+      expect(both.status).toBe("completed");
+      expect(advisory(both)).toHaveLength(1);
+    });
+
+    it("does not warn for the baseline alone, with the timetable off, or for small runs", async () => {
+      addStudents(150);
+      expect(advisory(await executeSingleAllocation({ ...base, algorithm: "baseline", seed: 1 }))).toHaveLength(0);
+      expect(advisory(await executeSingleAllocation({ ...base, algorithm: "optimized", includeTimetable: false }))).toHaveLength(0);
+      seedLiveData();
+      addStudents(149);
+      expect(advisory(await executeSingleAllocation({ ...base, algorithm: "optimized" }))).toHaveLength(0);
+    });
+  });
+
+  it("a worker that runs out of memory is a clear 500 ALLOCATION_OUT_OF_MEMORY and the run is failed", async () => {
+    _overrideSingleService({
+      runSingleAllocation: () => {
+        throw Object.assign(new Error("heap"), { code: "ERR_WORKER_OUT_OF_MEMORY" });
+      },
+    });
+    const err = await executeSingleAllocation({ ...base, algorithm: "optimized" }).catch((e) => e);
+    expect(err).toMatchObject({ statusCode: 500, code: "ALLOCATION_OUT_OF_MEMORY" });
+    expect(err.message).not.toMatch(/heap/);
+    const [run] = Object.values(db.runs);
+    expect(run.status).toBe("failed");
+    expect(db.allocations).toHaveLength(0);
   });
 
   it("a partly filled-in timetable is a 400 before any run is created", async () => {
