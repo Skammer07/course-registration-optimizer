@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "course-registration-api-v1",
     "name": "Course Registration Optimization API",
-    "description": "Postman collection for the IIT (ISM) Dhanbad Course Registration Optimization backend.\n\nSet the `baseUrl` variable before use. Authentication uses HTTP-only cookies managed automatically by Postman.",
+    "description": "Postman collection for the IIT (ISM) Dhanbad Course Registration Optimization backend.\n\nSet the `baseUrl` variable before use. Authentication uses HTTP-only cookies managed automatically by Postman (log in once per role; use a separate Postman cookie jar / environment to be admin and student at the same time).\n\nTypical workflow (admin): Auth > Login, then (if the account has a temporary password) Auth > Change Password; Semesters > Create; Imports > students / courses / preferences (try dryRun first); Allocations > Run Allocation Comparison; Allocations > Run summary / Results by student / by course; Allocations > Publish. Student: Login, Change Password, Semesters > My semester status, Preferences > Submit, Allocations > My results (after publish).\n\nEvery response has an X-Request-Id header; error bodies include requestId.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -30,6 +30,21 @@
       "key": "courseId",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "runIdB",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "userId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "userEmail",
+      "value": "new.user@example.com",
+      "type": "string"
     }
   ],
   "item": [
@@ -41,7 +56,7 @@
           "request": {
             "method": "GET",
             "url": "{{baseUrl}}/health",
-            "description": "Returns application health and database connectivity status."
+            "description": "No login needed. Reports database and algorithm availability, algorithm version, uptime and the number of allocation runs computing right now. 503 if the database or the algorithm package is unavailable."
           }
         }
       ]
@@ -84,6 +99,24 @@
           }
         },
         {
+          "name": "Change Password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/change-password",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"the_temporary_or_current_password\",\n  \"newPassword\": \"a-new-password-of-8-to-128-chars\"\n}"
+            },
+            "description": "Any logged-in user. Required first when the account has a temporary password (mustChangePassword): until then every other route returns 403 PASSWORD_CHANGE_REQUIRED. Sets a fresh cookie and invalidates older tokens. Wrong current password: 400 INVALID_CURRENT_PASSWORD."
+          }
+        },
+        {
           "name": "Login - Invalid Password",
           "request": {
             "method": "POST",
@@ -115,6 +148,228 @@
               "mode": "raw",
               "raw": "{\"password\": \"somepassword\"}"
             }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Users (Admin)",
+      "item": [
+        {
+          "name": "Create user - temporary password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/users",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"role\": \"faculty\"\n}"
+            },
+            "description": "Omit password: the server returns a one-time temporaryPassword in the response (shown once, never stored in plain text). The user must change it at first login. For role student add \"studentId\"."
+          }
+        },
+        {
+          "name": "Create user - admin sets password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/users",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"other.user@example.com\",\n  \"password\": \"password123\",\n  \"role\": \"faculty\"\n}"
+            },
+            "description": "Legacy form: the admin chooses the password (8-128 chars). No temporary password is returned."
+          }
+        },
+        {
+          "name": "List users",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/users?role=faculty&isActive=true&search=example&page=1&limit=50",
+            "description": "Filters: role, isActive, search (email), page, limit (max 200). Never returns password data."
+          }
+        },
+        {
+          "name": "Get user",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/users/{{userId}}"
+          }
+        },
+        {
+          "name": "Deactivate user",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/users/{{userId}}/status",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"isActive\": false\n}"
+            },
+            "description": "Takes effect on the user's very next request. You cannot deactivate yourself or the last active admin (409)."
+          }
+        },
+        {
+          "name": "Reactivate user",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/users/{{userId}}/status",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"isActive\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "Reset password",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/users/{{userId}}/reset-password",
+            "description": "Returns a new one-time temporaryPassword, forces a change at next login and invalidates the user's existing sessions. Not allowed on your own account."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Semesters",
+      "item": [
+        {
+          "name": "Create semester",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/semesters",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"semesterId\": \"{{semesterId}}\",\n  \"name\": \"Autumn 2026\",\n  \"preferencesOpenAt\": \"2026-07-01T00:00:00.000Z\",\n  \"preferencesCloseAt\": \"2026-07-15T18:00:00.000Z\"\n}"
+            },
+            "description": "Admin. Dates are optional (a missing bound is unbounded). A semester with no record counts as open."
+          }
+        },
+        {
+          "name": "List semesters",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/semesters",
+            "description": "Admin/faculty."
+          }
+        },
+        {
+          "name": "Update semester dates",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/semesters/{{semesterId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"preferencesCloseAt\": \"2026-07-20T18:00:00.000Z\"\n}"
+            },
+            "description": "Admin. null clears a date; close must be after open."
+          }
+        },
+        {
+          "name": "Open preferences now",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/semesters/{{semesterId}}/preferences-state",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"state\": \"open\"\n}"
+            },
+            "description": "Admin. state: open | closed | auto (auto follows the dates). Publishing a run closes preferences automatically."
+          }
+        },
+        {
+          "name": "Close preferences now",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/semesters/{{semesterId}}/preferences-state",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"state\": \"closed\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Back to the dates (auto)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/semesters/{{semesterId}}/preferences-state",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"state\": \"auto\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Semester status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/semesters/{{semesterId}}/status",
+            "description": "Any logged-in user. status: preferences-not-open | preferences-open | allocation-pending | results-published."
+          }
+        },
+        {
+          "name": "My semester status (student)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/semesters/me/status",
+            "description": "Student only: 'me' resolves to the logged-in student's semester."
           }
         }
       ]
@@ -280,6 +535,119 @@
           "request": {
             "method": "DELETE",
             "url": "{{baseUrl}}/api/v1/courses/{{courseId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Imports (Admin, CSV)",
+      "item": [
+        {
+          "name": "Import students - dry run",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/csv"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/imports/students?dryRun=true",
+            "body": {
+              "mode": "raw",
+              "raw": "studentId,name,cgpa,department,semesterId,electiveGroups,email\nIMP001,Asha Rao,9.1,CSE,{{semesterId}},A;B,imp001@example.com\nIMP002,Ravi Kumar,8.4,ECE,{{semesterId}},A;B,imp002@example.com\n"
+            },
+            "description": "Body is the CSV (Content-Type text/csv, max 2 MB / 5000 rows). dryRun=true validates and reports; nothing is written. Any problem returns 422 with {row, column, message}."
+          }
+        },
+        {
+          "name": "Import students (skip existing)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/csv"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/imports/students",
+            "body": {
+              "mode": "raw",
+              "raw": "studentId,name,cgpa,department,semesterId,electiveGroups,email\nIMP001,Asha Rao,9.1,CSE,{{semesterId}},A;B,imp001@example.com\nIMP002,Ravi Kumar,8.4,ECE,{{semesterId}},A;B,imp002@example.com\n"
+            },
+            "description": "onExisting=skip is the default."
+          }
+        },
+        {
+          "name": "Import students + create logins",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/csv"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/imports/students?createLogins=true",
+            "body": {
+              "mode": "raw",
+              "raw": "studentId,name,cgpa,department,semesterId,electiveGroups,email\nIMP001,Asha Rao,9.1,CSE,{{semesterId}},A;B,imp001@example.com\nIMP002,Ravi Kumar,8.4,ECE,{{semesterId}},A;B,imp002@example.com\n"
+            },
+            "description": "Needs an email column. Each new student gets a login with a one-time temporary password, returned once in data.credentials and data.credentialsCsv (save it now). Max 500 logins per import."
+          }
+        },
+        {
+          "name": "Import students (update existing)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/csv"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/imports/students?onExisting=update",
+            "body": {
+              "mode": "raw",
+              "raw": "studentId,name,cgpa\nIMP001,Asha Rao,9.2\n"
+            },
+            "description": "Empty cells never overwrite existing values."
+          }
+        },
+        {
+          "name": "Import courses",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/csv"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/imports/courses",
+            "body": {
+              "mode": "raw",
+              "raw": "courseCode,title,capacity,semesterId,electiveGroup,timetable\nIMPA1,Algorithms,30,{{semesterId}},A,Monday 09:00-10:00; Wednesday 09:00-10:00\nIMPA2,Machine Learning,30,{{semesterId}},A,Tuesday 09:00-10:00\nIMPB1,Databases,30,{{semesterId}},B,Thursday 11:00-12:00\n"
+            },
+            "description": "timetable cell: slots separated by ';', like 'Monday 09:00-10:00' (full or 3-letter weekday). Courses are identified by courseCode + semesterId."
+          }
+        },
+        {
+          "name": "Import preferences",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/csv"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/imports/preferences?status=submitted",
+            "body": {
+              "mode": "raw",
+              "raw": "studentId,semesterId,electiveGroup,courseCode,rank\nIMP001,{{semesterId}},A,IMPA1,1\nIMP001,{{semesterId}},A,IMPA2,2\nIMP002,{{semesterId}},A,IMPA2,1\nIMP002,{{semesterId}},A,IMPA1,2\n"
+            },
+            "description": "One row per ranked course; the list order is the rank order. Checked like a student submission (active student, right semester and group, course exists and is in that group). Bypasses the preference deadline."
           }
         }
       ]
@@ -455,37 +823,65 @@
           }
         },
         {
+          "name": "My results (student)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/allocations/my-results",
+            "description": "Student only. The logged-in student's own PUBLISHED assignments (course, preference rank, phase). Before publishing: published=false and an empty list."
+          }
+        },
+        {
+          "name": "Published run of a semester",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/allocations/published?semesterId={{semesterId}}",
+            "description": "Any logged-in user. Which run/algorithm is published. Students may only ask about their own semester."
+          }
+        },
+        {
+          "name": "Run summary (dashboard)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/allocations/runs/{{runId}}/summary",
+            "description": "Admin/faculty. Both algorithms side by side: metrics, validation, runtimes, policy details and differences (optimized minus baseline). No winner is declared."
+          }
+        },
+        {
+          "name": "Results by student",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/allocations/runs/{{runId}}/results/by-student?algorithm=baseline&status=all&sort=cgpa&search=&page=1&limit=50",
+            "description": "One row per student including unallocated ones. status: all|allocated|unallocated; sort: studentId|name|cgpa|coursesAllocated|averageRank. algorithm may be omitted when the run is published."
+          }
+        },
+        {
+          "name": "Results by course",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/allocations/runs/{{runId}}/results/by-course?algorithm=baseline&sort=utilization&includeStudents=true",
+            "description": "One row per course: capacity, seats filled, utilization, demand, phase split and (optionally) students."
+          }
+        },
+        {
+          "name": "Export run as CSV",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/allocations/runs/{{runId}}/export?algorithm=baseline",
+            "description": "Admin/faculty. CSV attachment, one row per assignment. In Postman use Send and Download."
+          }
+        },
+        {
           "name": "Get Run Results",
           "request": {
             "method": "GET",
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/allocations/runs/{{runId}}/results?algorithm=optimized&page=1&limit=100",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "allocations",
-                "runs",
-                "{{runId}}",
-                "results"
-              ],
-              "query": [
-                {
-                  "key": "algorithm",
-                  "value": "optimized"
-                },
-                {
-                  "key": "page",
-                  "value": "1"
-                },
-                {
-                  "key": "limit",
-                  "value": "100"
-                }
-              ]
-            }
+            "url": "{{baseUrl}}/api/v1/allocations/runs/{{runId}}/results?algorithm=baseline&phase=merit&rank=1&sort=-rank&page=1&limit=100",
+            "description": "Admin/faculty. Raw assignment rows. Optional filters: algorithm, phase (merit|random), rank, courseCode, studentId; sort = default | rank | -rank | phase."
           }
         },
         {
@@ -540,6 +936,33 @@
               "raw": "{}"
             },
             "description": "Demonstrates that omitting the 'algorithm' field returns 400 Bad Request."
+          }
+        },
+        {
+          "name": "Verify run (replay)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/allocations/runs/{{runId}}/verify",
+            "description": "Admin. Re-runs the algorithm(s) from the stored snapshot (baseline: stored seed and ratios) and compares with the stored assignments. Add ?algorithm=baseline|optimized for one."
+          }
+        },
+        {
+          "name": "Cancel a running run",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/allocations/runs/{{runId}}/cancel",
+            "description": "Admin. Only for status running. The run becomes cancelled; the request that started it answers 409 ALLOCATION_CANCELLED."
+          }
+        },
+        {
+          "name": "Delete a run",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/allocations/runs/{{runId}}",
+            "description": "Admin. Only completed, failed or cancelled runs; published runs are kept for audit (409)."
           }
         }
       ]

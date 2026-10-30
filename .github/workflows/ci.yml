@@ -1,0 +1,56 @@
+name: CI
+
+# Runs the automated tests on every push and pull request to main.
+# The tests need no database and no secrets (the Atlas end-to-end script,
+# backend/tests/e2e/realdb.e2e.mjs, is run by hand and is not part of CI).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend tests (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22]
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      # The backend tests also run the real algorithm package from ../algorithm.
+      - run: npm test
+
+  algorithm:
+    name: Algorithm tests (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22]
+    defaults:
+      run:
+        working-directory: algorithm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: algorithm/package-lock.json
+      - run: npm ci
+      - run: npm test

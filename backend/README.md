@@ -4,6 +4,8 @@
 
 > This is a B.Tech final-year project prototype. It is not an official college registration system. Institutional allocation rules have not been formally confirmed; see [Allocation Policy Assumptions](#allocation-policy-assumptions).
 
+**Related documents:** [`docs/api-contract.md`](../docs/api-contract.md) (every endpoint, request and response), [`docs/algorithm-design.md`](../docs/algorithm-design.md) (what the algorithms do and their limits), [`docs/problem-statement.md`](../docs/problem-statement.md), and the Postman collection [`postman/course-registration-api.json`](postman/course-registration-api.json).
+
 ---
 
 ## Prerequisites
@@ -45,10 +47,18 @@ cp .env.example .env
 | `JWT_EXPIRES_IN`            | no       | JWT lifetime (default: 15m)                              |
 | `RATE_LIMIT_LOGIN_MAX`      | no       | Max login attempts per window (default: 10)              |
 | `RATE_LIMIT_LOGIN_WINDOW_MS`| no       | Rate-limit window in ms (default: 900000 = 15 min)       |
+| `RATE_LIMIT_API_MAX`        | no       | Max API requests per IP per window (default: 300)        |
+| `RATE_LIMIT_API_WINDOW_MS`  | no       | API rate-limit window in ms (default: 60000)             |
+| `TRUST_PROXY`               | no       | Number of reverse proxies in front of the app (default: 0) |
+| `ALLOCATION_TIMEOUT_MS`     | no       | Time limit for one allocation run (default: 60000)       |
+| `ALLOCATION_WORKER_MAX_MB`  | no       | Memory cap for one run's worker thread (default: 1024)   |
+| `SEED_STUDENT_PASSWORD`     | no       | Password for logins created by the seed script (random if unset) |
 | `SEED_ADMIN_EMAIL`          | no       | Development-only first admin email                       |
 | `SEED_ADMIN_PASSWORD`       | no       | Development-only first admin password                    |
 
 > **Security:** Never commit `.env`. The root `.gitignore` already excludes it.
+>
+> **Database name:** put the database name in `MONGODB_URI` after the host (`...mongodb.net/course-registration?retryWrites=true&w=majority`). Without one, MongoDB uses its default database called `test`.
 
 ---
 
@@ -104,6 +114,7 @@ All endpoints return a consistent JSON envelope:
 | POST   | `/api/v1/auth/login`  | —       | Login (sets cookie)      |
 | POST   | `/api/v1/auth/logout` | —       | Logout (clears cookie)   |
 | GET    | `/api/v1/auth/me`     | 🔒 any  | Current user info        |
+| POST   | `/api/v1/auth/change-password` | 🔒 any | Change own password (also the only action allowed with a temporary password) |
 
 ### Students
 
@@ -141,17 +152,42 @@ All endpoints return a consistent JSON envelope:
 | Method | Path            | Auth     | Description |
 |--------|-----------------|----------|-------------|
 | POST   | `/api/v1/users` | 🔒 admin | Create a login. `role: "student"` requires `studentId` (the login is bound to that Student record; one login per student). No public signup. The password hash is never returned. |
+| GET    | `/api/v1/users`, `/api/v1/users/:id` | 🔒 admin | List (filter by role/active/email) or fetch logins |
+| PATCH  | `/api/v1/users/:id/status` | 🔒 admin | Activate / deactivate (not yourself, not the last active admin) |
+| POST   | `/api/v1/users/:id/reset-password` | 🔒 admin | New one-time temporary password, forced change |
+| POST   | `/api/v1/imports/students`, `/courses`, `/preferences` | 🔒 admin | CSV bulk import (`dryRun`, `onExisting`, `createLogins`); see `docs/api-contract.md` |
+
+### Semesters
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET    | `/api/v1/semesters/:semesterId/status` | 🔒 any | Banner status (`me` for students). One of `preferences-not-open`, `preferences-open`, `allocation-pending`, `results-published` |
+| GET    | `/api/v1/semesters` | 🔒 admin/faculty | List semester records |
+| POST   | `/api/v1/semesters` | 🔒 admin | Create with optional `preferencesOpenAt` / `preferencesCloseAt` |
+| PATCH  | `/api/v1/semesters/:semesterId` | 🔒 admin | Update name/dates |
+| PUT    | `/api/v1/semesters/:semesterId/preferences-state` | 🔒 admin | `open` / `closed` / `auto` override |
+
+> A semester with no record is treated as open. Preference edits outside the window return `403 PREFERENCES_CLOSED`; publishing a run closes preferences automatically.
 
 ### Allocations
 
 | Method | Path                                       | Auth   | Description                          |
 |--------|--------------------------------------------|--------|--------------------------------------|
+| GET    | `/api/v1/allocations/my-results`           | 🔒 student | Own PUBLISHED assignments only |
+| GET    | `/api/v1/allocations/published`            | 🔒 any | Published run info for a semester (`?semesterId=`; students: own semester) |
 | POST   | `/api/v1/allocations/compare`              | 🔒 admin | Run BOTH algorithms together in one run |
 | POST   | `/api/v1/allocations/run`                  | 🔒 admin | Run ONE selected algorithm (`baseline` or `optimized`) as its own run |
 | GET    | `/api/v1/allocations/runs/compare`         | 🔒 admin/faculty | Side-by-side comparison of two stored runs |
 | GET    | `/api/v1/allocations/runs`                 | 🔒 admin/faculty | List runs (paginated)        |
 | GET    | `/api/v1/allocations/runs/:runId`          | 🔒 admin/faculty | Run summary + metrics        |
-| GET    | `/api/v1/allocations/runs/:runId/results`  | 🔒 admin/faculty | Assignments (paginated)      |
+| GET    | `/api/v1/allocations/runs/:runId/results`  | 🔒 admin/faculty | Assignments (paginated; filters `phase`, `rank`, `courseCode`, `studentId`; `sort`) |
+| GET    | `/api/v1/allocations/runs/:runId/export`   | 🔒 admin/faculty | CSV download of one algorithm's assignments (formula-injection safe) |
+| POST   | `/api/v1/allocations/runs/:runId/cancel`   | 🔒 admin | Cancel a running run (stops its worker) |
+| DELETE | `/api/v1/allocations/runs/:runId`          | 🔒 admin | Delete a never-published run and its assignments |
+| POST   | `/api/v1/allocations/runs/:runId/verify`   | 🔒 admin | Replay check against the stored snapshot, seed and ratios |
+| GET    | `/api/v1/allocations/runs/:runId/summary`  | 🔒 admin/faculty | Both algorithms side by side + differences, one call |
+| GET    | `/api/v1/allocations/runs/:runId/results/by-student` | 🔒 admin/faculty | One row per student (incl. unallocated), search/sort/paginate |
+| GET    | `/api/v1/allocations/runs/:runId/results/by-course`  | 🔒 admin/faculty | One row per course: seats, utilization, demand |
 | POST   | `/api/v1/allocations/runs/:runId/publish`  | 🔒 admin | Publish selected algorithm's results |
 
 > **Publish body (required):**
@@ -177,6 +213,14 @@ All endpoints return a consistent JSON envelope:
 - The login endpoint is rate-limited (default: 10 attempts per 15 minutes, in-memory).
 - Roles: `student`, `faculty`, `admin`. Role is taken from the database only — never from client input.
 
+### Passwords and the first admin (production)
+
+```bash
+node scripts/create-admin.js --email admin@college.edu          # generated one-time password, printed once
+node scripts/create-admin.js --email admin@college.edu --reset  # recover an existing admin
+```
+Temporary passwords (new logins without a password, admin resets, student CSV imports with `createLogins=true`, `create-admin`) are generated by the server, shown once, stored only as a hash, and must be changed at first login (`403 PASSWORD_CHANGE_REQUIRED` until then). A password change or reset invalidates all older tokens. There is no email service: the admin passes the password on.
+
 ### Creating the First Admin (Development Only)
 
 Set `SEED_ADMIN_EMAIL` and `SEED_ADMIN_PASSWORD` in `.env`. The server seeds this account once on startup in `NODE_ENV=development`. Remove these variables before deploying.
@@ -187,7 +231,8 @@ Set `SEED_ADMIN_EMAIL` and `SEED_ADMIN_PASSWORD` in `.env`. The server seeds thi
 
 | Collection      | Purpose                                              |
 |-----------------|------------------------------------------------------|
-| `users`         | Authentication records (email, hash, role)           |
+| `users`         | Authentication records (email, hash, role, must-change-password flag) |
+| `semesters`     | Per-semester preference window (open/close dates, manual override) |
 | `students`      | Student profiles (studentId, name, cgpa, semesterId) |
 | `courses`       | Course records (courseCode, capacity, timetable)     |
 | `preferences`   | Ranked preference lists per student/semester/group   |
@@ -287,6 +332,14 @@ npm run seed -- --scenario balanced --size small --semester SEM-SEED --seed 1 --
 
 Generated data: two elective groups (A, B), 3-10 courses per group, each student ranks up to 15 courses per group (skewed so some courses are popular), every list `submitted`. Then run `POST /allocations/run` once per algorithm and `GET /allocations/runs/compare`. Group sizes, capacities and clash rates are **test assumptions, not institutional rules**.
 
+### Runtime protections and tracing
+
+- Every response has an `X-Request-Id` header and error bodies carry `requestId`; the same id is in the server logs.
+- `GET /health` also reports the algorithm package, its version, uptime and the number of runs computing right now.
+- A run's worker thread has a memory cap (`ALLOCATION_WORKER_MAX_MB`, default 1024) in addition to the time limit; exceeding it fails only that run (`ALLOCATION_OUT_OF_MEMORY`).
+- Runs left in `running` by a crash or restart are marked failed automatically after twice the time limit plus a minute (checked at startup and every 5 minutes); workers are stopped at shutdown.
+- A run that includes the optimizer with the timetable check on and 150+ students records an advisory in `inputWarnings` (the optimizer's timetable search can be very slow on large inputs).
+
 ### Stale records, time limit and optimizer scaling
 
 - **Stale data no longer crashes a run.** Preferences are loaded for the whole semester, but only active students and active courses take part. Preference lists of inactive students are skipped, withdrawn courses are dropped (the remaining courses keep their order), and everything excluded is recorded on the run as `inputWarnings`. A partly filled-in timetable (some active courses without slots) is rejected with `400` before a run is created; disable it with `includeTimetable: false`.
@@ -298,23 +351,27 @@ Generated data: two elective groups (A, B), 3-10 courses per group, each student
 ## Testing
 
 ```bash
-# Run all backend tests
+# Backend unit + HTTP tests (no database, no secrets needed)
 npm test
 
 # Watch mode
 npm run test:watch
 
-# Algorithm tests. The algorithm package has no installed dependencies in this
-# checkout; either `cd ../algorithm && npm install && npx vitest run`, or from
-# backend/ (uses the backend's vitest):
-npx vitest run --root ../algorithm
+# Algorithm tests (the algorithm package has its own dependencies)
+cd ../algorithm && npm ci && npm test
 ```
 
-Test results (as of implementation):
-- **Backend:** 21 test files, 407 tests — all passing
-- **Algorithm:** 14 test files, 94 tests — all passing
+Current results: **backend 29 test files, 575 tests; algorithm 14 test files, 95 tests**, all passing. They run without a `.env` file, and the same two suites run in CI (`.github/workflows/ci.yml`, Node 20 and 22) on every push and pull request to `main`.
 
-Tests that require a live MongoDB connection are not yet implemented (planned as extension). Current tests use mocks to avoid database dependency.
+### Real-database end-to-end check (manual)
+
+The unit and HTTP tests use mocked models. A separate script exercises the whole system against a **real MongoDB (Atlas)**: seeding, login and roles, CSV imports, both algorithms, publishing and a concurrent-publish race, replay verification, cancelling a long run, temporary passwords, deadlines, the dashboard views and more (132 checks at the time of writing).
+
+```bash
+node tests/e2e/realdb.e2e.mjs
+```
+
+It needs `MONGODB_URI` and `JWT_SECRET` in `.env` (and your IP allowed in Atlas Network Access). It never touches your data: it switches to a throwaway database named `course_reg_e2e_<timestamp>` and drops it at the end. The server logs are noisy; to see only the checks, filter the output for lines starting with `PASS`, `FAIL` or `SKIP`, and the final `N/N checks passed` line. It is not run in CI because it needs database credentials.
 
 ---
 
@@ -323,12 +380,14 @@ Tests that require a live MongoDB connection are not yet implemented (planned as
 1. **Rate limiting is in-memory.** Not shared across Node.js instances. For multi-instance deployments, use a shared store.
 2. **Algorithm policy not confirmed.** The optimizer does not reproduce the official IIT (ISM) allocation procedure.
 3. **No institutional SSO.** Authentication is local password-based. Institutional integration would require replacing the auth provider.
-4. **No submission deadline enforcement.** Configurable deadlines are not yet implemented.
+4. **Deadlines are per semester only.** Preference windows are enforced (see Semesters), but there is no per-student or per-group deadline.
 5. **No real-time notifications.** Allocation run status is only available via polling.
-6. **Concurrency tests use an in-memory model fake.** Publication safety relies on MongoDB's per-document atomic `findOneAndUpdate` (valid on standalone and replica sets) but this has not been exercised against a real MongoDB here; run a two-client race against a dev database before relying on it.
+6. **Concurrency is tested against a fake in the unit tests and against real Atlas in the manual end-to-end script.** Publication safety relies on MongoDB's per-document atomic `findOneAndUpdate`; six simultaneous publishes of one run produced exactly one publication on Atlas. It has not been load-tested.
 7. **Optimizer is group-agnostic and not CGPA-priority based**, and compulsory-course / per-group rules are undefined; the system must not be presented as the official allotment procedure until policy is confirmed.
 8. **Crash recovery window.** A run abandoned mid-publication is blocked for 5 minutes (`PUBLISH_STALE_MS`) before it can be recovered automatically.
 9. **Student fields.** Faculty can create students and edit name/department, but only admins may change `cgpa`, `semesterId`, `electiveGroups` and `isActive` on update (faculty creation still sets an initial CGPA).
-10. **User management is minimal.** `POST /users` (admin) creates logins, but there are no endpoints to list, deactivate or reset passwords of users. The very first admin still comes from the development-only seed, so production needs a one-off bootstrap.
-11. **Dev-tooling advisories.** `npm audit --omit=dev` reports 0 vulnerabilities; remaining advisories are in vitest/vite/esbuild test tooling (major-version upgrade not done).
+10. **No self-service password reset.** Admins can create logins, list and deactivate them, and issue temporary passwords, and users can change their own password, but there is no "forgot password" email flow (no mail service). The first production admin is created with `node scripts/create-admin.js`.
+11. **Optimizer speed with timetable checking.** Its clash search is data dependent and can take from milliseconds to over a minute at 200 students (see `docs/algorithm-design.md`). Runs have a time limit and a memory cap, large runs get a warning, and `includeTimetable=false` avoids the search. Speeding it up is an algorithm change that is still to be decided.
+12. **Run cancellation is per server process.** Cancelling stops a run only on the instance that is computing it; a stale `running` run left by a crash is cleaned up automatically.
+13. **Dev-tooling advisories.** `npm audit --omit=dev` reports 0 vulnerabilities; remaining advisories are in vitest/vite/esbuild test tooling (major-version upgrade not done).
 
