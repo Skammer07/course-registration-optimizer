@@ -77,6 +77,19 @@ async function main() {
       );
     }
 
+    // Student ids (SEED0001...) are unique across the whole database, not per semester. Seeded
+    // students left in ANOTHER semester (or in this one when --reset was not given) would make
+    // the insert fail with a bare duplicate-key error, so say what to do instead.
+    const existing = await Student.distinct("semesterId", { studentId: /^SEED/ });
+    if (existing.length > 0) {
+      const names = existing.map((s) => `"${s}"`).join(", ");
+      throw new Error(
+        `Seeded students already exist in semester ${names}, and student ids are unique across the database. ` +
+          `Refresh that data with: node scripts/seed.js --semester ${existing[0]} --reset --users  (add your other options), ` +
+          `or point MONGODB_URI at an empty database.`
+      );
+    }
+
     const students = await Student.insertMany(data.students);
     const courses = await Course.insertMany(data.courses);
     const studentOid = new Map(students.map((s) => [s.studentId, s._id]));

@@ -285,6 +285,24 @@
           }
         },
         {
+          "name": "Semester overview (what has data)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/semesters/overview",
+            "description": "Admin/faculty. Every semester that has data or an admin record, with counts of active students, active courses, submitted preference lists and runs. Used by the New run screen to offer a list instead of a typed id. Data from the seed script or CSV imports appears even without a semester record."
+          }
+        },
+        {
+          "name": "Course demand (how many ranked each course)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/semesters/{{semesterId}}/demand",
+            "description": "Admin/faculty. For every course of the semester: how many submitted preference lists rank it, and how many rank it first and second. Courses nobody ranked are included with zeros."
+          }
+        },
+        {
           "name": "Update semester dates",
           "request": {
             "method": "PATCH",
@@ -721,6 +739,24 @@
                 }
               ]
             }
+          }
+        },
+        {
+          "name": "Preference progress per student (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/preferences/overview?semesterId={{semesterId}}&status=incomplete&page=1&limit=25",
+            "description": "Admin/faculty. Every student of the semester with their submission state per elective group (submitted / draft / missing / na) and an overall status (complete / incomplete / none), plus totals. Filters: search, department, status, includeInactive."
+          }
+        },
+        {
+          "name": "One student's preference lists (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/preferences?student={{studentId}}&semesterId={{semesterId}}",
+            "description": "Admin/faculty. The lists of one student (their _id, from the student list), each with its ranked courses."
           }
         }
       ]

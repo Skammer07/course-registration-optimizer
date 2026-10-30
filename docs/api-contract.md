@@ -45,7 +45,8 @@ This is the contract for the frontend. The frontend must **display** results fro
 | DELETE | `/courses/:id` | admin | soft deactivate |
 | GET | `/preferences/me` | student | own preferences |
 | PUT | `/preferences/me` | student | body `{ semesterId, electiveGroup, rankedCourseIds: [courseId...], status: "draft" \| "submitted" }`; rank = array position |
-| GET | `/preferences`, `/preferences/:id` | admin, faculty | paginated |
+| GET | `/preferences`, `/preferences/:id` | admin, faculty | paginated. Filters: `semesterId`, `electiveGroup`, `status`, `student` (the student's `_id`; ranked courses are populated with `courseCode`, `title`) |
+| GET | `/preferences/overview` | admin, faculty | who has submitted: query `semesterId` (required), `search`, `department`, `status=all\|complete\|incomplete\|none`, `includeInactive`, `page`, `limit` (max 200). Returns `{ semesterId, groups, departments, summary: { students, complete, incomplete, none, perGroup: { G: { submitted, draft, missing } } }, students: [{ _id, studentId, name, cgpa, department, electiveGroups, isActive, status, groups: { G: { status: submitted\|draft\|missing\|na, count } } }], total, page, limit, totalPages }`. `summary` ignores the filters and counts active students only. A student is expected to have one list per group of their `electiveGroups` (every group of the semester when none is set) |
 | POST | `/users` | admin | create a login; `role: "student"` needs `studentId`. **Omit `password`** to get a server-generated one-time `temporaryPassword` in the response (`mustChangePassword: true`) |
 | GET | `/users` | admin | list logins: `?role=`, `?isActive=`, `?search=` (email), `page`, `limit` (default 50, max 200); never returns password data |
 | GET | `/users/:id` | admin | one login |
@@ -86,6 +87,8 @@ node scripts/create-admin.js --email admin@college.edu --reset  # recover an exi
 |---|---|---|---|
 | GET | `/semesters/:semesterId/status` | any logged in | UI banner data. Students may only read their own semester; `me` resolves to the student's semester (admin/faculty must pass a real id) |
 | GET | `/semesters` | admin, faculty | list semester records |
+| GET | `/semesters/:semesterId/demand` | admin, faculty | how many submitted lists rank each course: `{ semesterId, lists, studentsWithLists, courses: [{ courseId, courseCode, ranked, firstChoice, secondChoice }] }`; courses nobody ranked appear with zeros |
+| GET | `/semesters/overview` | admin, faculty | every semester that has data or a record, with what each holds (for pickers): `[{ semesterId, name, recordExists, students, courses, preferenceLists, runs, published }]`. Counts cover active students, active courses and submitted preference lists. Data entered by the seed script or CSV imports has no record but still appears. Sorted: semesters with students first, then by id |
 | POST | `/semesters` | admin | `{ semesterId, name?, preferencesOpenAt?, preferencesCloseAt? }` (ISO dates; close must be after open); duplicate is `409` |
 | PATCH | `/semesters/:semesterId` | admin | change name or dates (`null` clears a date) |
 | PUT | `/semesters/:semesterId/preferences-state` | admin | `{ "state": "open" \| "closed" \| "auto" }`: force open/closed, or `auto` to follow the dates. Creates the record if missing |

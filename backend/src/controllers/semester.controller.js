@@ -7,10 +7,23 @@ import { success, created } from "../utils/respond.js";
 import { ApiError } from "../utils/ApiError.js";
 import Student from "../models/Student.js";
 import * as semesters from "../services/semester.service.js";
+import { getCourseDemand } from "../services/dataOverview.service.js";
 
 export const list = asyncHandler(async (_req, res) => {
   const items = await semesters.listSemesters();
   return success(res, { semesters: items }, "Semesters retrieved");
+});
+
+/** Every semester that has data or a record, with counts (for pickers). */
+export const overview = asyncHandler(async (_req, res) => {
+  const items = await semesters.listSemesterOverview();
+  return success(res, { semesters: items }, "Semester overview retrieved");
+});
+
+/** How many students ranked each course of the semester (submitted lists only). */
+export const demand = asyncHandler(async (req, res) => {
+  const result = await getCourseDemand(req.params.semesterId);
+  return success(res, result, "Course demand retrieved");
 });
 
 export const create = asyncHandler(async (req, res) => {

@@ -520,6 +520,66 @@ try {
     impOpt.status === 201 && impOptRun.status === "completed" && impOptRun.optimizedMetrics?.totalAssignments > 0 && impOptRun.optimizedValidation?.valid === true,
     `${impOptRun.optimizedMetrics?.totalAssignments} assignments`);
 
+  const impStuOverview = () => student.get("/api/v1/semesters/overview");
+  // ---- semester overview: what the New run screen offers instead of a typed id ----------------
+  const ov = await admin.get("/api/v1/semesters/overview");
+  const ovRows = ov.body?.data?.semesters ?? [];
+  const imp2 = ovRows.find((x) => x.semesterId === IMP);
+  const e2e2 = ovRows.find((x) => x.semesterId === SEM);
+  check("overview: imported data with no semester record is listed with its real counts",
+    ov.status === 200 && imp2?.students === N && imp2.courses === 8 && imp2.preferenceLists === 2 * N && imp2.recordExists === false && imp2.runs === 2,
+    JSON.stringify(imp2));
+  check("overview: a semester with an admin record and a published run is flagged", e2e2?.recordExists === true && e2e2.published === true && e2e2.students > 0,
+    JSON.stringify(e2e2));
+  check("overview: semesters that hold students come first", ovRows.slice(0, 2).every((x) => x.students > 0));
+  check("overview is closed to students", (await impStuOverview()).status === 403);
+
+  // ---- demand per course, preference overview, per-student lists (data screens) ---------------
+  const dem = (await admin.get(`/api/v1/semesters/${IMP}/demand`)).body?.data;
+  const sumOf = (rows, key) => rows.reduce((n, r) => n + r[key], 0);
+  check("demand: counts every ranked entry of the imported lists (40 students x 2 groups x 3 courses)",
+    dem?.lists === 2 * N && dem.studentsWithLists === N && dem.courses.length === 8 && sumOf(dem.courses, "ranked") === 6 * N,
+    `lists=${dem?.lists} students=${dem?.studentsWithLists} ranked=${dem && sumOf(dem.courses, "ranked")}`);
+  check("demand: every list has exactly one first and one second choice",
+    sumOf(dem.courses, "firstChoice") === 2 * N && sumOf(dem.courses, "secondChoice") === 2 * N);
+  check("demand: no course is ranked by more students than exist", dem.courses.every((c) => c.ranked <= N));
+
+  const ovA = (await admin.get(`/api/v1/preferences/overview?semesterId=${IMP}&limit=200`)).body?.data;
+  check("overview: all 40 imported students have submitted both lists",
+    ovA?.summary?.students === N && ovA.summary.complete === N && ovA.summary.none === 0 &&
+      JSON.stringify(ovA.groups) === JSON.stringify(["A", "B"]) && ovA.total === N,
+    JSON.stringify(ovA?.summary));
+  check("overview: per-group totals add up", ovA?.summary?.perGroup?.A?.submitted === N && ovA.summary.perGroup.B.submitted === N);
+
+  // turn one student into a draft and delete another list entirely, then look again
+  const imp3 = await Student.findOne({ studentId: "IMP003" }).lean();
+  const imp4 = await Student.findOne({ studentId: "IMP004" }).lean();
+  await Preference.updateOne({ student: imp3._id, semesterId: IMP, electiveGroup: "B" }, { $set: { status: "draft" } });
+  await Preference.deleteMany({ student: imp4._id, semesterId: IMP });
+  const ovB = (await admin.get(`/api/v1/preferences/overview?semesterId=${IMP}&limit=200`)).body?.data;
+  const rowOf = (id) => ovB.students.find((r) => r.studentId === id);
+  check("overview: a draft list makes the student incomplete; no lists at all is not started",
+    ovB.summary.complete === N - 2 && ovB.summary.incomplete === 1 && ovB.summary.none === 1 &&
+      rowOf("IMP003").status === "incomplete" && rowOf("IMP003").groups.B.status === "draft" &&
+      rowOf("IMP004").status === "none" && rowOf("IMP004").groups.A.status === "missing",
+    JSON.stringify(ovB.summary));
+  check("demand: drafts are not counted (a run would not use them)",
+    (await admin.get(`/api/v1/semesters/${IMP}/demand`)).body.data.lists === 2 * N - 3);
+  const onlyNone = (await admin.get(`/api/v1/preferences/overview?semesterId=${IMP}&status=none`)).body?.data;
+  check("overview: the status filter finds the student who has not started",
+    onlyNone.total === 1 && onlyNone.students[0].studentId === "IMP004");
+  const found = (await admin.get(`/api/v1/preferences/overview?semesterId=${IMP}&search=imported%2012`)).body?.data;
+  check("overview: search by name works", found.students.some((r) => r.studentId === "IMP012"));
+
+  const imp1 = await Student.findOne({ studentId: "IMP001" }).lean();
+  const mine = (await admin.get(`/api/v1/preferences?student=${imp1._id}&semesterId=${IMP}`)).body?.data;
+  check("a student's own lists can be fetched, in rank order with course titles",
+    mine?.preferences?.length === 2 && mine.preferences.every((p) => p.rankedCourseIds.length === 3 && p.rankedCourseIds[0].courseCode && p.rankedCourseIds[0].title),
+    `${mine?.preferences?.length} lists`);
+  check("these data screens are closed to students",
+    (await impStuOverview()).status === 403 && (await student.get(`/api/v1/semesters/${IMP}/demand`)).status === 403 &&
+      (await student.get(`/api/v1/preferences/overview?semesterId=${IMP}`)).status === 403);
+
   // an imported student signs in with the one-time password from the import
   const cred = imp.body?.data?.credentials?.find((c) => c.studentId === "IMP002");
   const impStu = request.agent(app);

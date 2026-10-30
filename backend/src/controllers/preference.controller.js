@@ -6,6 +6,7 @@ import mongoose from "mongoose";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { success } from "../utils/respond.js";
 import * as preferenceService from "../services/preference.service.js";
+import { getPreferenceOverview } from "../services/dataOverview.service.js";
 import { ApiError } from "../utils/ApiError.js";
 
 /**
@@ -50,6 +51,12 @@ export const upsertMyPreference = asyncHandler(async (req, res) => {
 export const listAll = asyncHandler(async (req, res) => {
   const result = await preferenceService.listAllPreferences(req.query);
   return success(res, result, "All preferences retrieved");
+});
+
+/** Students of a semester with their submission status per elective group. */
+export const overview = asyncHandler(async (req, res) => {
+  const result = await getPreferenceOverview(req.query);
+  return success(res, result, "Preference overview retrieved");
 });
 
 export const getOne = asyncHandler(async (req, res) => {

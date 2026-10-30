@@ -178,8 +178,9 @@ export async function upsertPreference(studentObjectId, data) {
 /**
  * List all preferences (admin/faculty).
  */
-export async function listAllPreferences({ semesterId, electiveGroup, status, page, limit }) {
+export async function listAllPreferences({ semesterId, electiveGroup, status, student, page, limit }) {
   const filter = {};
+  if (student) filter.student = student;
   if (semesterId) filter.semesterId = semesterId;
   if (electiveGroup) filter.electiveGroup = electiveGroup;
   if (status) filter.status = status;

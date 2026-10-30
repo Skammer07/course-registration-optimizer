@@ -11,6 +11,10 @@
  */
 
 import Semester from "../models/Semester.js";
+import Student from "../models/Student.js";
+import Course from "../models/Course.js";
+import Preference from "../models/Preference.js";
+import AllocationRun from "../models/AllocationRun.js";
 import { ApiError } from "../utils/ApiError.js";
 import { logger } from "../utils/logger.js";
 import { getPublishedRunInfo } from "./publishedResults.service.js";
@@ -86,6 +90,64 @@ export async function getSemesterStatus(semesterId) {
 
 export async function listSemesters() {
   return Semester.find({}).sort({ semesterId: 1 }).lean();
+}
+
+/**
+ * Every semester the system knows about, with what it holds, so a screen can offer a list
+ * instead of asking someone to type an id. A semester appears if it has an admin record, active
+ * students, active courses, submitted preferences or any run; data entered through the seed
+ * script or CSV imports has no record, so records alone would miss it.
+ *
+ * @returns {Promise<{ semesterId: string, name: string, recordExists: boolean, students: number,
+ *   courses: number, preferenceLists: number, runs: number, published: boolean }[]>}
+ */
+export async function listSemesterOverview() {
+  const countBy = (Model, match) =>
+    Model.aggregate([{ $match: match }, { $group: { _id: "$semesterId", n: { $sum: 1 } } }]);
+
+  const [students, courses, preferences, runs, records] = await Promise.all([
+    countBy(Student, { isActive: true }),
+    countBy(Course, { isActive: true }),
+    countBy(Preference, { status: "submitted" }),
+    AllocationRun.aggregate([
+      {
+        $group: {
+          _id: "$semesterId",
+          n: { $sum: 1 },
+          published: { $sum: { $cond: [{ $eq: ["$status", "published"] }, 1, 0] } },
+        },
+      },
+    ]),
+    Semester.find({}).select("semesterId name").lean(),
+  ]);
+
+  const byId = new Map();
+  const entry = (id) => {
+    if (!byId.has(id)) {
+      byId.set(id, { semesterId: id, name: "", recordExists: false, students: 0, courses: 0, preferenceLists: 0, runs: 0, published: false });
+    }
+    return byId.get(id);
+  };
+  const valid = (row) => typeof row._id === "string" && row._id.trim() !== "";
+
+  for (const r of students.filter(valid)) entry(r._id).students = r.n;
+  for (const r of courses.filter(valid)) entry(r._id).courses = r.n;
+  for (const r of preferences.filter(valid)) entry(r._id).preferenceLists = r.n;
+  for (const r of runs.filter(valid)) {
+    const e = entry(r._id);
+    e.runs = r.n;
+    e.published = r.published > 0;
+  }
+  for (const r of records) {
+    const e = entry(r.semesterId);
+    e.recordExists = true;
+    e.name = r.name ?? "";
+  }
+
+  // semesters that actually hold data first, then by id
+  return [...byId.values()].sort(
+    (a, b) => Number(b.students > 0) - Number(a.students > 0) || a.semesterId.localeCompare(b.semesterId)
+  );
 }
 
 export async function createSemester(data) {

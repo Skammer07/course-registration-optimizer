@@ -144,7 +144,8 @@ All endpoints return a consistent JSON envelope:
 |--------|----------------------------|--------------------|--------------------------------|
 | GET    | `/api/v1/preferences/me`   | 🔒 student (linked record required) | Student's own preferences. Admin/faculty get `403`; a student account without a valid linked student record gets `400`. No query runs without a valid student id. |
 | PUT    | `/api/v1/preferences/me`   | 🔒 student         | Submit/update preferences       |
-| GET    | `/api/v1/preferences`      | 🔒 admin/faculty   | All preferences (paginated)     |
+| GET    | `/api/v1/preferences`      | 🔒 admin/faculty   | All preferences (paginated; filter by `semesterId`, `electiveGroup`, `status`, `student`) |
+| GET    | `/api/v1/preferences/overview` | 🔒 admin/faculty | Per-student submission status for a semester (search, department, status filters), with totals |
 | GET    | `/api/v1/preferences/:id`  | 🔒 admin/faculty   | Single preference document      |
 
 ### Users
@@ -163,6 +164,8 @@ All endpoints return a consistent JSON envelope:
 |--------|------|------|-------------|
 | GET    | `/api/v1/semesters/:semesterId/status` | 🔒 any | Banner status (`me` for students). One of `preferences-not-open`, `preferences-open`, `allocation-pending`, `results-published` |
 | GET    | `/api/v1/semesters` | 🔒 admin/faculty | List semester records |
+| GET    | `/api/v1/semesters/:semesterId/demand` | 🔒 admin/faculty | How many submitted lists rank each course (total, first and second choice) |
+| GET    | `/api/v1/semesters/overview` | 🔒 admin/faculty | Every semester with data or a record, with counts (students, courses, submitted preference lists, runs) |
 | POST   | `/api/v1/semesters` | 🔒 admin | Create with optional `preferencesOpenAt` / `preferencesCloseAt` |
 | PATCH  | `/api/v1/semesters/:semesterId` | 🔒 admin | Update name/dates |
 | PUT    | `/api/v1/semesters/:semesterId/preferences-state` | 🔒 admin | `open` / `closed` / `auto` override |
@@ -329,6 +332,8 @@ npm run seed -- --scenario balanced --size small --semester SEM-SEED --seed 1 --
 | `--seed` | integer | regenerates identical data |
 | `--reset` | flag | first delete earlier seeded data of that semester (only records with the `SEED` / `SD-` prefix) |
 | `--users` | flag | also create `seedNNNN@seed.local` student logins; the password comes from `SEED_STUDENT_PASSWORD` or is generated and printed once |
+
+> **One seeded dataset per database.** Seeded student ids (`SEED0001`...) are unique across the whole database, so seeding a second semester into a database that already holds seeded data fails with a message naming the existing semester. Refresh that one with `--semester <that semester> --reset --users`, or use an empty database (set a database name in `MONGODB_URI`).
 
 Generated data: two elective groups (A, B), 3-10 courses per group, each student ranks up to 15 courses per group (skewed so some courses are popular), every list `submitted`. Then run `POST /allocations/run` once per algorithm and `GET /allocations/runs/compare`. Group sizes, capacities and clash rates are **test assumptions, not institutional rules**.
 

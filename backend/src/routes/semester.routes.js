@@ -22,6 +22,10 @@ router.use(requireAuth);
 router.get("/:semesterId/status", ctrl.status);
 
 router.get("/", requireRole("admin", "faculty"), ctrl.list);
+// Which semesters exist and what each holds (admin/faculty: shows counts of students and runs)
+router.get("/overview", requireRole("admin", "faculty"), ctrl.overview);
+// Demand per course (admin/faculty: reveals how many students ranked what)
+router.get("/:semesterId/demand", requireRole("admin", "faculty"), ctrl.demand);
 router.post("/", requireRole("admin"), validate(createSemesterSchema), ctrl.create);
 router.patch("/:semesterId", requireRole("admin"), validate(updateSemesterSchema), ctrl.update);
 router.put(

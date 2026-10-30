@@ -9,6 +9,7 @@ import { validate } from "../middleware/validate.middleware.js";
 import {
   upsertPreferenceSchema,
   preferenceQuerySchema,
+  preferenceOverviewQuerySchema,
 } from "../validators/preference.schema.js";
 import * as ctrl from "../controllers/preference.controller.js";
 
@@ -31,6 +32,14 @@ router.get(
   requireRole("admin", "faculty"),
   validate(preferenceQuerySchema, "query"),
   ctrl.listAll
+);
+
+// Who has submitted, drafted or not started (must stay above "/:id")
+router.get(
+  "/overview",
+  requireRole("admin", "faculty"),
+  validate(preferenceOverviewQuerySchema, "query"),
+  ctrl.overview
 );
 
 router.get("/:id", requireRole("admin", "faculty"), ctrl.getOne);
