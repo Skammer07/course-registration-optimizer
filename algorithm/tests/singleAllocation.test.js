@@ -34,6 +34,19 @@ describe("runSingleAllocation", () => {
     expect(single.configuration.randomSeed).toBeNull();
   });
 
+  it("reports the policy details (phase split / assumptions / no-quota flag)", () => {
+    const base = runSingleAllocation(structuredClone(input), { algorithm: "baseline", seed: 5 });
+    const both = runAllocationComparison(structuredClone(input), { seed: 5 });
+    expect(base.phaseSummary).toEqual(both.baseline.phaseSummary);
+    expect(base.assumptions).toEqual(both.baseline.assumptions);
+    expect(base.assumptions.join(" ")).toMatch(/Unused merit quota does not transfer/);
+
+    const opt = runSingleAllocation(structuredClone(input), { algorithm: "optimized" });
+    expect(opt.assumptions.meritRandomQuotasPreserved).toBe(false);
+    expect(opt.totalPreferenceCost).toBe(both.optimized.totalPreferenceCost);
+    expect(opt.phaseSummary).toBeNull();
+  });
+
   it("baseline supports meritRatio 0 and 1", () => {
     for (const [m, r] of [[0, 1], [1, 0]]) {
       const res = runSingleAllocation(structuredClone(input), {

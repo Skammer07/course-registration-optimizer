@@ -139,5 +139,12 @@ export function runSingleAllocation(input, options = {}) {
     metrics,
     runtimeMs: run.runtimeMs,
     validation,
+    // Policy details so a caller can state what the algorithm did and did not
+    // enforce (baseline: phase split + assumptions; optimizer: objective and
+    // meritRandomQuotasPreserved=false).
+    phaseSummary: algorithm === "baseline" ? run.result.phaseSummary : null,
+    assumptions: run.result.assumptions,
+    totalPreferenceCost:
+      algorithm === "optimized" ? run.result.totalPreferenceCost : null,
   };
 }

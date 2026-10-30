@@ -184,6 +184,7 @@ export function runAllocationComparison(input, options = {}) {
       runtimeMs: baselineRun.runtimeMs,
       validation: baselineValidation,
       phaseSummary: baselineRun.result.phaseSummary,
+      assumptions: baselineRun.result.assumptions,
     },
 
     optimized: {
