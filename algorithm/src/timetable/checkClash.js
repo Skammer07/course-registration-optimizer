@@ -39,6 +39,37 @@ function sameDay(dayA, dayB) {
     String(dayB).trim().toLowerCase();
 }
 
+/** True when two slots are on the same day and overlap in time. */
+export function slotsOverlap(slotA, slotB) {
+  return sameDay(slotA.day, slotB.day) && intervalsOverlap(slotA, slotB);
+}
+
+/**
+ * Returns true if the course overlaps any of a student's fixed slots
+ * (their compulsory courses). fixedSlots is [{ day, start, end }].
+ */
+export function clashesWithFixedSlots(courseId, fixedSlots, timetable) {
+  if (!Array.isArray(fixedSlots) || fixedSlots.length === 0) {
+    return false;
+  }
+
+  const courseSlots = timetable[courseId];
+
+  if (!Array.isArray(courseSlots) || courseSlots.length === 0) {
+    throw new Error(`Missing timetable slots for course ${courseId}`);
+  }
+
+  for (const courseSlot of courseSlots) {
+    for (const fixedSlot of fixedSlots) {
+      if (slotsOverlap(courseSlot, fixedSlot)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
 /**
  * Returns true if the proposed course overlaps with
  * any course already allocated to this student.
@@ -96,10 +127,21 @@ export function hasTimetableClash(
 
 /**
  * Adapter for the allocation algorithms' canEnroll hook.
- * It checks only the proposed student's existing allocations.
+ * It checks the student's fixed (compulsory) slots and the student's
+ * existing allocations.
  */
-export function createTimetableCanEnroll(timetable) {
+export function createTimetableCanEnroll(timetable, fixedTimetable = null) {
   return (student, course, allocations) => {
+    if (
+      clashesWithFixedSlots(
+        course.id,
+        fixedTimetable?.[student.id],
+        timetable
+      )
+    ) {
+      return false;
+    }
+
     const studentAllocations = allocations.filter(
       allocation => allocation.studentId === student.id
     );

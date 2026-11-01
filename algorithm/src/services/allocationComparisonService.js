@@ -11,7 +11,7 @@ import { createSeededRandom, generateSeed } from "../utils/seededRandom.js";
  * Bump when allocation behavior changes, so a stored run records which
  * version of the algorithms produced it.
  */
-export const ALGORITHM_VERSION = "1.1.0";
+export const ALGORITHM_VERSION = "1.5.1";
 
 const DEFAULT_MAX_COURSES_PER_STUDENT = 2;
 
@@ -36,7 +36,7 @@ export function runAllocationComparison(input, options = {}) {
     throw new Error("Input is required.");
   }
 
-  const { students, courses, preferences, timetable } = input;
+  const { students, courses, preferences, timetable, fixedTimetable } = input;
 
   if (
     !Array.isArray(students) ||
@@ -51,8 +51,18 @@ export function runAllocationComparison(input, options = {}) {
   const maxCoursesPerStudent =
     options.maxCoursesPerStudent ?? DEFAULT_MAX_COURSES_PER_STUDENT;
 
-  const meritRatio = options.meritRatio ?? 0.75;
-  const randomRatio = options.randomRatio ?? 0.25;
+  const meritRatio = options.meritRatio ?? 0.7;
+  const randomRatio = options.randomRatio ?? 0.3;
+  const oneCoursePerGroup = options.oneCoursePerGroup ?? true;
+
+  // The optimizer is held to the baseline's own result (no student ends worse)
+  // and uses CGPA to decide who gets the better choices among equal results.
+  const optimizerFloor = options.optimizerFloor ?? "baseline";
+  const cgpaPriority = options.cgpaPriority ?? true;
+
+  if (optimizerFloor !== "baseline" && optimizerFloor !== "none") {
+    throw new Error('optimizerFloor must be "baseline" or "none".');
+  }
 
   if (
     !Number.isInteger(maxCoursesPerStudent) ||
@@ -96,6 +106,8 @@ export function runAllocationComparison(input, options = {}) {
   const sharedOptions = {
     maxCoursesPerStudent,
     timetable,
+    fixedTimetable,
+    oneCoursePerGroup,
   };
 
   // Run the baseline: merit allocation followed by random allocation.
@@ -115,7 +127,14 @@ export function runAllocationComparison(input, options = {}) {
   const optimizedRun = runAndMeasure(() =>
     allocateOptimized(
       { students, courses, preferences },
-      sharedOptions
+      {
+        ...sharedOptions,
+        floor: optimizerFloor === "baseline" ? baselineRun.result.allocations : null,
+        cgpaPriority,
+        maxFlowSolves: options.maxFlowSolves,
+        maxWork: options.maxWork,
+        searchTimeLimitMs: options.searchTimeLimitMs,
+      }
     )
   );
 
@@ -126,6 +145,8 @@ export function runAllocationComparison(input, options = {}) {
     preferences,
     allocations: baselineRun.result.allocations,
     timetable: timetable ?? null,
+    fixedTimetable: fixedTimetable ?? null,
+    oneCoursePerGroup,
     maxCoursesPerStudent,
   });
 
@@ -135,6 +156,8 @@ export function runAllocationComparison(input, options = {}) {
     preferences,
     allocations: optimizedRun.result.allocations,
     timetable: timetable ?? null,
+    fixedTimetable: fixedTimetable ?? null,
+    oneCoursePerGroup,
     maxCoursesPerStudent,
   });
 
@@ -158,6 +181,8 @@ export function runAllocationComparison(input, options = {}) {
       courses,
       preferences,
       timetable,
+      fixedTimetable,
+      oneCoursePerGroup,
       maxCoursesPerStudent,
     },
     baseline: baselineRun.result,
@@ -174,8 +199,12 @@ export function runAllocationComparison(input, options = {}) {
       meritRatio,
       randomRatio,
       randomSeed,
+      oneCoursePerGroup,
+      optimizerFloor,
+      cgpaPriority,
       algorithmVersion: ALGORITHM_VERSION,
       timetableValidationEnabled: Boolean(timetable),
+      fixedTimetableEnabled: Boolean(timetable && fixedTimetable),
     },
 
     baseline: {

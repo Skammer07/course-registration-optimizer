@@ -18,16 +18,20 @@ export function runAllocation(input, options = {}) {
   }
 
   const {
-    meritRatio = 0.75,
-    randomRatio = 0.25,
+    meritRatio = 0.7,
+    randomRatio = 0.3,
     maxCoursesPerStudent = 2,
+    oneCoursePerGroup = true,
     random = Math.random,
     timetable,
+    fixedTimetable,
   } = options;
 
   const canEnroll =
     options.canEnroll ??
-    (timetable ? createTimetableCanEnroll(timetable) : undefined);
+    (timetable
+      ? createTimetableCanEnroll(timetable, fixedTimetable)
+      : undefined);
 
   // Phase 1: Merit allocation
   const meritResult = allocateMeritPhase(
@@ -35,6 +39,7 @@ export function runAllocation(input, options = {}) {
     {
       meritRatio,
       maxCoursesPerStudent,
+      oneCoursePerGroup,
       canEnroll,
     }
   );
@@ -50,6 +55,7 @@ export function runAllocation(input, options = {}) {
     {
       randomRatio,
       maxCoursesPerStudent,
+      oneCoursePerGroup,
       random,
       canEnroll,
     }
@@ -67,6 +73,8 @@ export function runAllocation(input, options = {}) {
     preferences,
     allocations,
     timetable: timetable ?? null,
+    fixedTimetable: fixedTimetable ?? null,
+    oneCoursePerGroup,
     maxCoursesPerStudent,
   });
 
@@ -93,13 +101,20 @@ export function runAllocation(input, options = {}) {
     },
 
     assumptions: [
-      "Merit allocation runs for two iterations.",
+      meritResult.assumptions.oneCoursePerGroup
+        ? "Merit allocation serves students in CGPA order; each takes the best available course of every group's own priority list."
+        : "Merit allocation runs for two iterations.",
       "Merit and random quotas are calculated separately per course.",
       "Unused merit quota does not transfer to the random phase.",
       "Each student can receive at most the configured number of courses.",
       "Duplicate student-course allocations are prohibited.",
+      meritResult.assumptions.oneCoursePerGroup
+        ? "A student receives at most one course from each elective group."
+        : "Elective groups are not enforced.",
       "Final allocations are validated before being returned.",
-      timetable
+      timetable && fixedTimetable
+        ? "Timetable validation is enabled, including each student's compulsory course slots."
+        : timetable
         ? "Timetable validation is enabled."
         : "No timetable was supplied; timetable clash validation is not active.",
     ],

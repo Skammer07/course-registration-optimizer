@@ -110,15 +110,16 @@ describe("seeded randomness and reproducibility", () => {
   });
 });
 
-describe("elective group identity does not disturb the algorithms", () => {
+describe("elective group identity does not disturb the algorithms when groups are not enforced", () => {
   it("group-tagged records give the same result as untagged ones", () => {
     const stripped = {
       students,
       courses: courses.map(({ electiveGroup: _g, ...c }) => c),
       preferences: preferences.map(({ electiveGroup: _g, ...p }) => p),
     };
-    const a = runAllocationComparison(structuredClone(input), { seed: 99 });
-    const b = runAllocationComparison(stripped, { seed: 99 });
+    const off = { seed: 99, oneCoursePerGroup: false };
+    const a = runAllocationComparison(structuredClone(input), off);
+    const b = runAllocationComparison(stripped, off);
     expect(a.baseline.allocations).toEqual(b.baseline.allocations);
     expect(a.optimized.allocations).toEqual(b.optimized.allocations);
   });

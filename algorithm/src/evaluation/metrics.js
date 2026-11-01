@@ -61,6 +61,8 @@ export function calculateMetrics({
   preferences = [],
   allocations = [],
   timetable,
+  fixedTimetable = null,
+  oneCoursePerGroup = false,
   maxCoursesPerStudent = 2,
 } = {}) {
   const studentById = new Map(students.map((s) => [s.id, s]));
@@ -68,6 +70,13 @@ export function calculateMetrics({
 
   const preferenceRank = new Map(
     preferences.map((p) => [`${p.studentId}::${p.courseId}`, p.rank])
+  );
+
+  // The same course can be in the lists of two elective groups, so an
+  // allocation that names its group is ranked by that group's list.
+  const groupOfPreference = (p) => p.electiveGroup ?? courseById.get(p.courseId)?.electiveGroup ?? "";
+  const rankInGroup = new Map(
+    preferences.map((p) => [`${p.studentId}::${p.courseId}::${groupOfPreference(p)}`, p.rank])
   );
 
   const studentCounts = new Map();
@@ -109,7 +118,10 @@ export function calculateMetrics({
       (courseCounts.get(courseId) ?? 0) + 1
     );
 
-    const rank = preferenceRank.get(pair);
+    const rank =
+      (allocation.electiveGroup
+        ? rankInGroup.get(`${pair}::${allocation.electiveGroup}`)
+        : undefined) ?? preferenceRank.get(pair);
 
     if (rank !== undefined) {
       assignmentsWithPreferences++;
@@ -145,6 +157,29 @@ export function calculateMetrics({
 
   let timetableClashes = 0;
 
+  // Clashes with a student's compulsory (fixed) slots count as timetable clashes.
+  if (timetable && fixedTimetable) {
+    for (const allocation of allocations) {
+      const fixedSlots = fixedTimetable[allocation.studentId];
+      const slots = timetable[allocation.courseId] ?? [];
+
+      if (!Array.isArray(fixedSlots)) continue;
+
+      const clash = slots.some(slot =>
+        fixedSlots.some(fixed => {
+          if (slot.day !== fixed.day) return false;
+          const slotStart = timeToMinutes(slot.start);
+          const slotEnd = timeToMinutes(slot.end);
+          const fixedStart = timeToMinutes(fixed.start);
+          const fixedEnd = timeToMinutes(fixed.end);
+          return slotStart < fixedEnd && fixedStart < slotEnd;
+        })
+      );
+
+      if (clash) timetableClashes++;
+    }
+  }
+
   if (timetable) {
     const coursesByStudent = new Map();
 
@@ -176,6 +211,132 @@ export function calculateMetrics({
             timetableClashes++;
           }
         }
+      }
+    }
+  }
+
+  // Elective groups: more than one course in a group is a violation, and a
+  // student who ranked a group but got nothing from it is "missing" that group.
+  let groupLimitViolations = 0;
+  let studentsMissingAGroup = 0;
+
+  if (oneCoursePerGroup) {
+    const groupOf = new Map(courses.map((c) => [c.id, c.electiveGroup ?? null]));
+    const held = new Map();
+    const ranked = new Map();
+
+    for (const allocation of allocations) {
+      const group = allocation.electiveGroup ?? groupOf.get(allocation.courseId);
+      if (!group) continue;
+      const mine = held.get(allocation.studentId) ?? new Map();
+      mine.set(group, (mine.get(group) ?? 0) + 1);
+      held.set(allocation.studentId, mine);
+    }
+
+    for (const p of preferences) {
+      const group = groupOfPreference(p);
+      if (!group) continue;
+      if (!ranked.has(p.studentId)) ranked.set(p.studentId, new Set());
+      ranked.get(p.studentId).add(group);
+    }
+
+    for (const student of students) {
+      const mine = held.get(student.id) ?? new Map();
+      let missing = false;
+
+      for (const group of ranked.get(student.id) ?? []) {
+        if ((mine.get(group) ?? 0) === 0) missing = true;
+      }
+
+      for (const count of mine.values()) {
+        if (count > 1) groupLimitViolations += count - 1;
+      }
+
+      if (missing) studentsMissingAGroup++;
+    }
+  }
+
+  // CGPA priority. A violation is a student who ranked a course above the one
+  // they received in that group (or received nothing there), where that course
+  // went to a student with a LOWER CGPA, and the student could have taken it
+  // (they do not hold it already, and it does not clash with their other
+  // courses or their compulsory classes). Zero means CGPA order was respected.
+  let cgpaPriorityViolations = 0;
+
+  if (oneCoursePerGroup) {
+    const groupOf = new Map(courses.map((c) => [c.id, c.electiveGroup ?? null]));
+    const slotOfAllocation = (a) => a.electiveGroup ?? groupOf.get(a.courseId) ?? "";
+    const slotOfPreference = (p) => p.electiveGroup ?? groupOf.get(p.courseId) ?? "";
+
+    const holders = new Map();
+    const heldByStudent = new Map();
+
+    for (const a of allocations) {
+      if (!holders.has(a.courseId)) holders.set(a.courseId, new Set());
+      holders.get(a.courseId).add(a.studentId);
+      if (!heldByStudent.has(a.studentId)) heldByStudent.set(a.studentId, []);
+      heldByStudent.get(a.studentId).push(a);
+    }
+
+    const slotsOverlap = (slotsA, slotsB) =>
+      (slotsA ?? []).some((x) =>
+        (slotsB ?? []).some((y) => {
+          if (x.day !== y.day) return false;
+          return timeToMinutes(x.start) < timeToMinutes(y.end) &&
+            timeToMinutes(y.start) < timeToMinutes(x.end);
+        })
+      );
+
+    const canTake = (student, courseId, slot) => {
+      const held = heldByStudent.get(student.id) ?? [];
+
+      if (held.some((a) => a.courseId === courseId)) return false;
+
+      if (timetable) {
+        const slots = timetable[courseId];
+
+        if (fixedTimetable && slotsOverlap(slots, fixedTimetable[student.id])) return false;
+
+        // the course in this very slot would be replaced, so it does not count
+        for (const a of held) {
+          if (slotOfAllocation(a) === slot) continue;
+          if (slotsOverlap(slots, timetable[a.courseId])) return false;
+        }
+      }
+
+      return true;
+    };
+
+    const bySlot = new Map();
+
+    for (const p of preferences) {
+      const key = `${p.studentId}::${slotOfPreference(p)}`;
+      if (!bySlot.has(key)) bySlot.set(key, []);
+      bySlot.get(key).push(p);
+    }
+
+    for (const list of bySlot.values()) {
+      const student = studentById.get(list[0].studentId);
+      if (!student) continue;
+
+      const slot = slotOfPreference(list[0]);
+      const given = (heldByStudent.get(student.id) ?? []).find((a) => slotOfAllocation(a) === slot);
+      const givenRank = given
+        ? list.find((p) => p.courseId === given.courseId)?.rank ?? Infinity
+        : Infinity;
+
+      for (const p of list) {
+        if (p.rank >= givenRank) continue;
+
+        const wasGivenTo = holders.get(p.courseId);
+        if (!wasGivenTo) continue;
+
+        const lowerCgpaHolds = [...wasGivenTo].some((id) => {
+          const other = studentById.get(id);
+          return other && other.id !== student.id && other.cgpa < student.cgpa;
+        });
+
+        if (lowerCgpaHolds && canTake(student, p.courseId, slot)) cgpaPriorityViolations++;
       }
     }
   }
@@ -215,11 +376,15 @@ export function calculateMetrics({
     duplicateAssignments,
     invalidAssignments,
     timetableClashes,
+    groupLimitViolations,
+    studentsMissingAGroup,
+    cgpaPriorityViolations,
     constraintViolations:
       capacityViolations +
       studentLimitViolations +
       duplicateAssignments +
       invalidAssignments +
-      timetableClashes,
+      timetableClashes +
+      groupLimitViolations,
   };
 }

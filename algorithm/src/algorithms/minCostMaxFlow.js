@@ -15,6 +15,8 @@ export class MinCostMaxFlow {
     }
 
     this.nodeCount = nodeCount;
+    // edges looked at while solving: a measure of work that does not depend on the machine
+    this.scans = 0;
     this.graph = Array.from({ length: nodeCount }, () => []);
   }
 
@@ -48,6 +50,17 @@ export class MinCostMaxFlow {
 
     this.graph[from].push(forward);
     this.graph[to].push(reverse);
+
+    return forward;
+  }
+
+  /** Back to the state before solve(): every edge has its original capacity again. */
+  reset() {
+    for (const edges of this.graph) {
+      for (const edge of edges) {
+        edge.capacity = edge.originalCapacity;
+      }
+    }
   }
 
   #validateNode(node) {
@@ -68,15 +81,26 @@ export class MinCostMaxFlow {
 
     dist[source] = 0;
 
+    // A node whose distance has not changed since it was last scanned cannot
+    // improve any neighbour, so only "dirty" nodes are scanned. This visits
+    // nodes in the same order as a full pass and picks the same paths, it just
+    // skips scans that could not change anything.
+    const dirty = Array(n).fill(false);
+    dirty[source] = true;
+
     // Bellman-Ford supports negative residual-edge costs.
     for (let iteration = 0; iteration < n - 1; iteration++) {
       let changed = false;
 
       for (let u = 0; u < n; u++) {
-        if (dist[u] === Infinity) continue;
+        if (!dirty[u]) continue;
+        dirty[u] = false;
 
-        for (let i = 0; i < this.graph[u].length; i++) {
-          const edge = this.graph[u][i];
+        const edges = this.graph[u];
+        this.scans += edges.length;
+
+        for (let i = 0; i < edges.length; i++) {
+          const edge = edges[i];
 
           if (edge.capacity <= 0) continue;
 
@@ -86,6 +110,7 @@ export class MinCostMaxFlow {
             dist[edge.to] = candidate;
             prevNode[edge.to] = u;
             prevEdge[edge.to] = i;
+            dirty[edge.to] = true;
             changed = true;
           }
         }

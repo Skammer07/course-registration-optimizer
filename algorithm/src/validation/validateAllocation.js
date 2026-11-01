@@ -1,5 +1,5 @@
 
-import { hasTimetableClash } from "../timetable/checkClash.js";
+import { hasTimetableClash, clashesWithFixedSlots } from "../timetable/checkClash.js";
 
 export function validateAllocation({
   students,
@@ -7,6 +7,8 @@ export function validateAllocation({
   preferences,
   allocations,
   timetable = null,
+  fixedTimetable = null,
+  oneCoursePerGroup = false,
   maxCoursesPerStudent = 2,
 }) {
   const errors = [];
@@ -34,6 +36,13 @@ export function validateAllocation({
 
   const validPreferences = new Set(
     preferences.map((p) => `${p.studentId}::${p.courseId}`)
+  );
+
+  // With elective groups a list belongs to a group, and the same course can be
+  // in several groups' lists, so the allocation must name a list it came from.
+  const groupOfPreference = (p) => p.electiveGroup ?? courseById.get(p.courseId)?.electiveGroup ?? "";
+  const validGroupedPreferences = new Set(
+    preferences.map((p) => `${p.studentId}::${p.courseId}::${groupOfPreference(p)}`)
   );
 
   // Check each allocation.
@@ -70,7 +79,12 @@ export function validateAllocation({
       seenPairs.add(pairKey);
     }
 
-    if (!validPreferences.has(pairKey)) {
+    const listedInItsGroup =
+      oneCoursePerGroup && allocation.electiveGroup
+        ? validGroupedPreferences.has(`${pairKey}::${allocation.electiveGroup}`)
+        : validPreferences.has(pairKey);
+
+    if (!listedInItsGroup) {
       errors.push(
         `${label}: student "${studentId}" did not select course "${courseId}" in their preferences.`
       );
@@ -137,6 +151,47 @@ export function validateAllocation({
               `Student "${studentId}" has a timetable clash between "${first.courseId}" and "${second.courseId}".`
             );
           }
+        }
+      }
+    }
+  }
+
+  // At most one course from each elective group.
+  if (oneCoursePerGroup) {
+    for (const [studentId, assigned] of studentAllocations) {
+      const perGroup = new Map();
+
+      for (const allocation of assigned) {
+        const group = allocation.electiveGroup ?? courseById.get(allocation.courseId)?.electiveGroup;
+        if (!group) continue;
+        perGroup.set(group, (perGroup.get(group) ?? 0) + 1);
+      }
+
+      for (const [group, count] of perGroup) {
+        if (count > 1) {
+          errors.push(
+            `Student "${studentId}" has ${count} courses in elective group "${group}" (at most one is allowed).`
+          );
+        }
+      }
+    }
+  }
+
+  // Check clashes with each student's compulsory (fixed) slots.
+  if (timetable && fixedTimetable) {
+    for (const [studentId, assignedCourses] of studentAllocations) {
+      for (const allocation of assignedCourses) {
+        if (
+          courseById.has(allocation.courseId) &&
+          clashesWithFixedSlots(
+            allocation.courseId,
+            fixedTimetable[studentId],
+            timetable
+          )
+        ) {
+          errors.push(
+            `Student "${studentId}" has a timetable clash between "${allocation.courseId}" and a compulsory course.`
+          );
         }
       }
     }

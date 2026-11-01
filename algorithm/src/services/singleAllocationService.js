@@ -35,7 +35,7 @@ export function runSingleAllocation(input, options = {}) {
     throw new Error("Input is required.");
   }
 
-  const { students, courses, preferences, timetable } = input;
+  const { students, courses, preferences, timetable, fixedTimetable } = input;
 
   if (
     !Array.isArray(students) ||
@@ -54,21 +54,40 @@ export function runSingleAllocation(input, options = {}) {
     throw new Error("maxCoursesPerStudent must be a positive integer.");
   }
 
+  const oneCoursePerGroup = options.oneCoursePerGroup ?? true;
+
+  // The optimizer is held to the baseline: no student may end worse than the
+  // baseline's own result (computed here with the same split and seed), and it
+  // uses CGPA to decide who gets the better choices among equal results.
+  const optimizerFloor = options.optimizerFloor ?? "baseline";
+  const cgpaPriority = options.cgpaPriority ?? true;
+
+  if (optimizerFloor !== "baseline" && optimizerFloor !== "none") {
+    throw new Error('optimizerFloor must be "baseline" or "none".');
+  }
+
   const configuration = {
     algorithm,
     maxCoursesPerStudent,
+    oneCoursePerGroup,
+    optimizerFloor: algorithm === "optimized" ? optimizerFloor : null,
+    cgpaPriority: algorithm === "optimized" ? cgpaPriority : null,
     meritRatio: null,
     randomRatio: null,
     randomSeed: null,
     algorithmVersion: ALGORITHM_VERSION,
     timetableValidationEnabled: Boolean(timetable),
+    fixedTimetableEnabled: Boolean(timetable && fixedTimetable),
   };
 
   let run;
 
-  if (algorithm === "baseline") {
-    const meritRatio = options.meritRatio ?? 0.75;
-    const randomRatio = options.randomRatio ?? 0.25;
+  // The baseline is run for "baseline" itself and, as the floor, for "optimized".
+  let baselineRun = null;
+
+  if (algorithm === "baseline" || optimizerFloor === "baseline") {
+    const meritRatio = options.meritRatio ?? 0.7;
+    const randomRatio = options.randomRatio ?? 0.3;
 
     if (!Number.isFinite(meritRatio) || meritRatio < 0 || meritRatio > 1) {
       throw new Error("meritRatio must be between 0 and 1.");
@@ -88,17 +107,31 @@ export function runSingleAllocation(input, options = {}) {
     configuration.meritRatio = meritRatio;
     configuration.randomRatio = randomRatio;
 
-    run = runAndMeasure(() =>
+    baselineRun = runAndMeasure(() =>
       runAllocation(
         { students, courses, preferences },
-        { maxCoursesPerStudent, timetable, meritRatio, randomRatio, random }
+        { maxCoursesPerStudent, timetable, fixedTimetable, oneCoursePerGroup, meritRatio, randomRatio, random }
       )
     );
+  }
+
+  if (algorithm === "baseline") {
+    run = baselineRun;
   } else {
     run = runAndMeasure(() =>
       allocateOptimized(
         { students, courses, preferences },
-        { maxCoursesPerStudent, timetable }
+        {
+          maxCoursesPerStudent,
+          timetable,
+          fixedTimetable,
+          oneCoursePerGroup,
+          floor: optimizerFloor === "baseline" ? baselineRun.result.allocations : null,
+          cgpaPriority,
+          maxFlowSolves: options.maxFlowSolves,
+          maxWork: options.maxWork,
+          searchTimeLimitMs: options.searchTimeLimitMs,
+        }
       )
     );
   }
@@ -109,6 +142,8 @@ export function runSingleAllocation(input, options = {}) {
     preferences,
     allocations: run.result.allocations,
     timetable: timetable ?? null,
+    fixedTimetable: fixedTimetable ?? null,
+    oneCoursePerGroup,
     maxCoursesPerStudent,
   });
 
@@ -127,6 +162,8 @@ export function runSingleAllocation(input, options = {}) {
     courses,
     preferences,
     timetable,
+    fixedTimetable,
+    oneCoursePerGroup,
     maxCoursesPerStudent,
     allocations: run.result.allocations,
   });

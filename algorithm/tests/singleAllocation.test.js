@@ -25,13 +25,24 @@ describe("runSingleAllocation", () => {
     expect(single.optimized).toBeUndefined();
   });
 
-  it("runs only the optimizer and matches the optimized side of the combined run", () => {
-    const single = runSingleAllocation(structuredClone(input), { algorithm: "optimized" });
+  it("runs only the optimizer and matches the optimized side of the combined run (same seed)", () => {
+    const single = runSingleAllocation(structuredClone(input), { algorithm: "optimized", seed: 5 });
     const both = runAllocationComparison(structuredClone(input), { seed: 5 });
     expect(single.allocations).toEqual(both.optimized.allocations);
     expect(single.metrics).toEqual(both.optimized.metrics);
-    expect(single.configuration.meritRatio).toBeNull();
-    expect(single.configuration.randomSeed).toBeNull();
+    // the optimizer is held to the baseline's result, so it carries the baseline's split and seed
+    expect(single.configuration).toMatchObject({ optimizerFloor: "baseline", cgpaPriority: true, meritRatio: 0.7, randomSeed: 5 });
+  });
+
+  it("without the floor the optimizer-only run needs no baseline, split or seed", () => {
+    const single = runSingleAllocation(structuredClone(input), { algorithm: "optimized", optimizerFloor: "none" });
+    expect(single.configuration).toMatchObject({ optimizerFloor: "none", meritRatio: null, randomSeed: null });
+    expect(single.assumptions.floorApplied).toBe(false);
+  });
+
+  it("rejects an unknown floor", () => {
+    expect(() => runSingleAllocation(structuredClone(input), { algorithm: "optimized", optimizerFloor: "pure" })).toThrow(/optimizerFloor/);
+    expect(() => runAllocationComparison(structuredClone(input), { optimizerFloor: "pure" })).toThrow(/optimizerFloor/);
   });
 
   it("reports the policy details (phase split / assumptions / no-quota flag)", () => {
@@ -41,7 +52,7 @@ describe("runSingleAllocation", () => {
     expect(base.assumptions).toEqual(both.baseline.assumptions);
     expect(base.assumptions.join(" ")).toMatch(/Unused merit quota does not transfer/);
 
-    const opt = runSingleAllocation(structuredClone(input), { algorithm: "optimized" });
+    const opt = runSingleAllocation(structuredClone(input), { algorithm: "optimized", seed: 5 });
     expect(opt.assumptions.meritRandomQuotasPreserved).toBe(false);
     expect(opt.totalPreferenceCost).toBe(both.optimized.totalPreferenceCost);
     expect(opt.phaseSummary).toBeNull();

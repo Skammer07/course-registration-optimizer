@@ -36,6 +36,8 @@ export function compareAllocations({
     courses: input.courses ?? [],
     preferences: input.preferences ?? [],
     timetable: input.timetable,
+    fixedTimetable: input.fixedTimetable ?? null,
+    oneCoursePerGroup: input.oneCoursePerGroup ?? false,
     maxCoursesPerStudent: input.maxCoursesPerStudent ?? 2,
   };
 

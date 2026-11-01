@@ -90,7 +90,7 @@ describe("Merit allocation", () => {
       ],
     };
 
-    const result = allocateMeritPhase(input);
+    const result = allocateMeritPhase(input, { meritRatio: 0 });
 
     expect(result.allocations).toHaveLength(0);
   });
