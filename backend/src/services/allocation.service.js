@@ -33,7 +33,14 @@ import Course from "../models/Course.js";
 import Preference from "../models/Preference.js";
 import AllocationRun from "../models/AllocationRun.js";
 import Allocation from "../models/Allocation.js";
-import { runComparison, runSingle, fingerprintInput, prepareInputs } from "./allocationEngine.service.js";
+import {
+  runComparison,
+  runSingle,
+  fingerprintInput,
+  prepareInputs,
+  buildFixedTimetable,
+  isCompulsoryCourse,
+} from "./allocationEngine.service.js";
 import { preferenceWindowWarning, closePreferencesAfterPublish } from "./semester.service.js";
 import { largeTimetableRunWarning } from "../utils/runAdvisories.js";
 import { validateRunForPublication } from "./publicationValidation.service.js";
@@ -57,9 +64,11 @@ import { logger } from "../utils/logger.js";
 export async function executeAllocationComparison({
   semesterId,
   maxCoursesPerStudent = 2,
-  meritRatio = 0.75,
-  randomRatio = 0.25,
+  meritRatio = 0.7,
+  randomRatio = 0.3,
   includeTimetable = true,
+  optimizerFloor = "baseline",
+  cgpaPriority = true,
   seed,
   createdByUserId,
 }) {
@@ -72,6 +81,11 @@ export async function executeAllocationComparison({
       .populate("rankedCourseIds", "courseCode title electiveGroup semesterId")
       .lean(),
   ]);
+
+  // Compulsory courses are not allocated; they only fix part of each
+  // student's week so electives that overlap them are never given.
+  const compulsoryCourses = courses.filter(isCompulsoryCourse);
+  courses = courses.filter((c) => !isCompulsoryCourse(c));
 
   if (students.length === 0) {
     throw ApiError.badRequest(
@@ -102,13 +116,18 @@ export async function executeAllocationComparison({
   });
   if (sizeWarning) inputWarnings.messages = [...inputWarnings.messages, sizeWarning];
 
+  const fixed = includeTimetable
+    ? buildFixedTimetable({ students, compulsoryCourses })
+    : { fixedTimetable: null, messages: [] };
+  inputWarnings.messages = [...inputWarnings.messages, ...fixed.messages];
+
   // 2. Create a run record BEFORE calling the algorithm
   //    (so we can mark it as failed if anything below throws)
   const run = await AllocationRun.create({
     semesterId,
     status: "running",
     inputWarnings,
-    configuration: { maxCoursesPerStudent, meritRatio, randomRatio, timetableValidationEnabled: includeTimetable },
+    configuration: { maxCoursesPerStudent, meritRatio, randomRatio, timetableValidationEnabled: includeTimetable, oneCoursePerGroup: true, optimizerFloor, cgpaPriority },
     // Counts only; the full normalized snapshot is stored when the run completes
     inputSnapshot: {
       studentCount: students.length,
@@ -145,7 +164,8 @@ export async function executeAllocationComparison({
       courses,
       preferences,
       includeTimetable,
-      options: { maxCoursesPerStudent, meritRatio, randomRatio, seed },
+      fixedTimetable: fixed.fixedTimetable,
+      options: { maxCoursesPerStudent, meritRatio, randomRatio, seed, optimizerFloor, cgpaPriority },
       runId: String(run._id),
     });
     const totalRuntimeMs = Number((performance.now() - startMs).toFixed(3));
@@ -248,6 +268,7 @@ export async function executeAllocationComparison({
           courses: inputSnapshot.algCourses,
           preferences: inputSnapshot.algPreferences,
           timetable: inputSnapshot.timetable ?? null,
+          fixedTimetable: inputSnapshot.fixedTimetable ?? null,
         },
       },
       { new: true }
@@ -283,12 +304,17 @@ export async function executeSingleAllocation({
   meritRatio,
   randomRatio,
   includeTimetable = true,
+  optimizerFloor = "baseline",
+  cgpaPriority = true,
   seed,
   createdByUserId,
 }) {
   const isBaseline = algorithm === "baseline";
-  const merit = isBaseline ? (meritRatio ?? (randomRatio !== undefined ? 1 - randomRatio : 0.75)) : null;
-  const random = isBaseline ? (randomRatio ?? 1 - merit) : null;
+  // the optimizer is held to a baseline result unless told otherwise, so it needs the split and seed too
+  const usesBaseline = isBaseline || optimizerFloor === "baseline";
+  const rounded = (x) => Number(x.toFixed(10)); // 1 - 0.7 is 0.30000000000000004 in floating point
+  const merit = usesBaseline ? (meritRatio ?? (randomRatio !== undefined ? rounded(1 - randomRatio) : 0.7)) : null;
+  const random = usesBaseline ? (randomRatio ?? rounded(1 - merit)) : null;
 
   let [students, courses, preferences] = await Promise.all([
     Student.find({ semesterId, isActive: true }).lean(),
@@ -298,6 +324,9 @@ export async function executeSingleAllocation({
       .populate("rankedCourseIds", "courseCode title electiveGroup semesterId")
       .lean(),
   ]);
+
+  const compulsoryCourses = courses.filter(isCompulsoryCourse);
+  courses = courses.filter((c) => !isCompulsoryCourse(c));
 
   if (students.length === 0) {
     throw ApiError.badRequest(`No active students found for semester "${semesterId}".`);
@@ -322,6 +351,11 @@ export async function executeSingleAllocation({
   });
   if (sizeWarning) inputWarnings.messages = [...inputWarnings.messages, sizeWarning];
 
+  const fixed = includeTimetable
+    ? buildFixedTimetable({ students, compulsoryCourses })
+    : { fixedTimetable: null, messages: [] };
+  inputWarnings.messages = [...inputWarnings.messages, ...fixed.messages];
+
   const run = await AllocationRun.create({
     semesterId,
     status: "running",
@@ -332,6 +366,9 @@ export async function executeSingleAllocation({
       meritRatio: merit,
       randomRatio: random,
       timetableValidationEnabled: includeTimetable,
+      oneCoursePerGroup: true,
+      optimizerFloor: isBaseline ? null : optimizerFloor,
+      cgpaPriority: isBaseline ? false : cgpaPriority,
     },
     inputSnapshot: {
       studentCount: students.length,
@@ -366,7 +403,15 @@ export async function executeSingleAllocation({
       courses,
       preferences,
       includeTimetable,
-      options: { maxCoursesPerStudent, meritRatio: merit ?? undefined, randomRatio: random ?? undefined, seed },
+      fixedTimetable: fixed.fixedTimetable,
+      options: {
+        maxCoursesPerStudent,
+        meritRatio: merit ?? undefined,
+        randomRatio: random ?? undefined,
+        seed,
+        optimizerFloor,
+        cgpaPriority,
+      },
       runId: String(run._id),
     });
     computed = {
@@ -449,6 +494,7 @@ export async function executeSingleAllocation({
           courses: inputSnapshot.algCourses,
           preferences: inputSnapshot.algPreferences,
           timetable: inputSnapshot.timetable ?? null,
+          fixedTimetable: inputSnapshot.fixedTimetable ?? null,
         },
       },
       { new: true }
@@ -558,7 +604,7 @@ export async function compareRuns({ runA, runB, algorithmA, algorithmB }) {
     sameInput: Boolean(a.inputFingerprint && a.inputFingerprint === b.inputFingerprint),
     warnings,
     note:
-      "difference = B minus A. Lower is better for averagePreferenceRank, unallocatedStudents and constraintViolations; higher is usually better for assignments. No winner is declared because the algorithms follow different policies (the baseline keeps merit/random quotas; the optimizer maximizes assignments and ignores quotas and CGPA).",
+      "difference = B minus A. Lower is better for averagePreferenceRank, unallocatedStudents and constraintViolations; higher is usually better for assignments. No winner is declared because the algorithms follow different policies (the baseline keeps merit/random quotas; the optimizer maximizes assignments and, when held to the baseline, never leaves a student worse than the baseline's result and uses CGPA among equal results).",
   };
 }
 
@@ -602,6 +648,7 @@ export function buildAllocationDocs(runId, algorithm, algResult, studentMap, cou
         preferenceRank: a.preferenceRank,
         phase: a.phase ?? null,
         iteration: Number.isInteger(a.iteration) ? a.iteration : null,
+        electiveGroup: a.electiveGroup ?? null,
         status: "proposed",
       });
     }
@@ -637,7 +684,7 @@ export async function listAllocationRuns({ semesterId, status, algorithm, page, 
   const [runs, total] = await Promise.all([
     AllocationRun.find(filter)
       .select(
-        "-inputSnapshot.students -inputSnapshot.courses -inputSnapshot.preferences -inputSnapshot.timetable"
+        "-inputSnapshot.students -inputSnapshot.courses -inputSnapshot.preferences -inputSnapshot.timetable -inputSnapshot.fixedTimetable"
       )
       .populate("createdBy", "email role")
       .populate("publishedBy", "email role")

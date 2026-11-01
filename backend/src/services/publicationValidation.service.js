@@ -97,6 +97,7 @@ export function validateStoredAssignments({
         studentId: student.studentId,
         courseId: course.courseCode,
         preferenceRank: a.preferenceRank ?? null,
+        electiveGroup: a.electiveGroup ?? undefined,
       });
     }
   });
@@ -109,6 +110,8 @@ export function validateStoredAssignments({
       preferences: snap.preferences,
       allocations: mapped,
       timetable: snap.timetable ?? null,
+      fixedTimetable: snap.fixedTimetable ?? null,
+      oneCoursePerGroup: run.configuration?.oneCoursePerGroup ?? false,
       maxCoursesPerStudent: run.configuration?.maxCoursesPerStudent ?? 2,
     });
     errors.push(...result.errors);
@@ -121,8 +124,15 @@ export function validateStoredAssignments({
   const prefByPair = new Map(
     snap.preferences.map((p) => [`${p.studentId}::${p.courseId}`, p])
   );
+  // The same course can be in the lists of two elective groups; an assignment
+  // that names its group is compared with that group's list.
+  const prefByGroup = new Map(
+    snap.preferences.map((p) => [`${p.studentId}::${p.courseId}::${p.electiveGroup ?? ""}`, p])
+  );
   for (const a of mapped) {
-    const pref = prefByPair.get(`${a.studentId}::${a.courseId}`);
+    const pref =
+      (a.electiveGroup && prefByGroup.get(`${a.studentId}::${a.courseId}::${a.electiveGroup}`)) ||
+      prefByPair.get(`${a.studentId}::${a.courseId}`);
     if (!pref) continue; // already reported by the shared validator
     const group = courseGroup.get(a.courseId);
     if (pref.electiveGroup != null && group != null && pref.electiveGroup !== group) {

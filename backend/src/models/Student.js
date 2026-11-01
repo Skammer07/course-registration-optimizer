@@ -22,6 +22,8 @@ const studentSchema = new mongoose.Schema(
       required: [true, "Name is required"],
       trim: true,
     },
+    // Cumulative CGPA up to the previous semester, as it stands at pre-registration.
+    // This is the value the allocation ranks students by (not the current semester's own average).
     cgpa: {
       type: Number,
       required: [true, "CGPA is required"],

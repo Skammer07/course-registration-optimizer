@@ -19,6 +19,7 @@ export const upsertPreferenceSchema = z.object({
   rankedCourseIds: z
     .array(objectIdSchema, { error: "rankedCourseIds is required" })
     .min(1, "At least one course must be ranked")
+    .max(15, "A priority list can have at most 15 courses")
     .refine(
       (ids) => ids.length === new Set(ids).size,
       "Duplicate course IDs are not allowed"

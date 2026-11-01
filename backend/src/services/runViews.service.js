@@ -31,13 +31,17 @@ const COMPARED_METRICS = [
   "averagePreferenceRank",
   "constraintViolations",
   "timetableClashes",
+  "studentsMissingAGroup",
+  "groupLimitViolations",
+  "cgpaPriorityViolations",
 ];
 
 const POLICY_NOTE =
   "difference = optimized minus baseline. Lower is better for averagePreferenceRank, unallocatedStudents and " +
   "constraintViolations; higher is usually better for assignments. No winner is declared because the algorithms " +
-  "follow different policies (the baseline keeps merit/random quotas; the optimizer maximizes assignments and " +
-  "ignores quotas and CGPA).";
+  "follow different policies (the baseline keeps merit/random quotas; the optimizer maximizes assignments). " +
+  "When the optimizer was held to the baseline's result, no student ends worse than under the baseline and CGPA " +
+  "decides who gets the better choices among equal results; see the per-student comparison.";
 
 export function containedAlgorithms(run) {
   return run.algorithmsRun?.length ? run.algorithmsRun : ["baseline", "optimized"];
@@ -100,13 +104,77 @@ const text = (v) => String(v ?? "").toLowerCase();
 // ---------------------------------------------------------------------------
 
 /**
+ * How the optimizer's result compares with the baseline, student by student and group by group,
+ * so "better than the baseline" is shown, not claimed. Only totals and averages are returned
+ * (no individual CGPAs). Returns null if anything needed is missing.
+ */
+export async function comparisonEvidence(run) {
+  try {
+    const [rows, withStudents] = await Promise.all([
+      Allocation.find({ run: run._id }).select("algorithm preferenceRank electiveGroup student").populate("student", "studentId").lean(),
+      AllocationRun.findById(run._id).select("inputSnapshot.students").lean(),
+    ]);
+    const students = withStudents?.inputSnapshot?.students ?? [];
+    if (!rows.length || !students.length) return null;
+
+    const cgpa = new Map(students.map((s) => [s.id, s.cgpa]));
+    const slotsOf = (algorithm) => {
+      const slots = new Map();
+      const perStudent = new Map();
+      for (const a of rows.filter((r) => r.algorithm === algorithm)) {
+        const id = a.student?.studentId;
+        if (!id) continue;
+        slots.set(`${id}|${a.electiveGroup ?? ""}`, a.preferenceRank);
+        if (!perStudent.has(id)) perStudent.set(id, []);
+        perStudent.get(id).push(a.preferenceRank);
+      }
+      return { slots, perStudent };
+    };
+    const base = slotsOf("baseline");
+    const opt = slotsOf("optimized");
+
+    let better = 0, same = 0, worse = 0, gained = 0;
+    for (const [slot, rank] of base.slots) {
+      const x = opt.slots.get(slot);
+      if (x === undefined || x > rank) worse++;
+      else if (x < rank) better++;
+      else same++;
+    }
+    for (const slot of opt.slots.keys()) if (!base.slots.has(slot)) gained++;
+
+    const topCount = Math.max(1, Math.ceil(students.length / 5));
+    const top = new Set([...students].sort((a, b) => b.cgpa - a.cgpa || String(a.id).localeCompare(String(b.id))).slice(0, topCount).map((s) => s.id));
+    const average = (side, pick) => {
+      const ranks = [...side.perStudent].filter(([id]) => pick(id)).flatMap(([, r]) => r);
+      return ranks.length ? Number((ranks.reduce((a, b) => a + b, 0) / ranks.length).toFixed(2)) : null;
+    };
+    const worst = (side) => Math.max(0, ...[...side.slots.values()]);
+
+    return {
+      slots: base.slots.size,
+      better, same, worse, gained,
+      topCgpa: { students: top.size, baselineAverageRank: average(base, (id) => top.has(id)), optimizedAverageRank: average(opt, (id) => top.has(id)) },
+      others: { students: students.length - top.size, baselineAverageRank: average(base, (id) => !top.has(id)), optimizedAverageRank: average(opt, (id) => !top.has(id)) },
+      worstRank: { baseline: worst(base), optimized: worst(opt) },
+      cgpaPriorityViolations: {
+        baseline: run.baselineMetrics?.cgpaPriorityViolations ?? null,
+        optimized: run.optimizedMetrics?.cgpaPriorityViolations ?? null,
+      },
+      heldToBaseline: run.configuration?.optimizerFloor === "baseline",
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Everything the comparison dashboard needs, in one call. Never returns the
  * (large) input snapshot, only its counts.
  */
 export async function getRunSummary(runId) {
   const run = await loadRun(
     runId,
-    "-inputSnapshot.students -inputSnapshot.courses -inputSnapshot.preferences -inputSnapshot.timetable"
+    "-inputSnapshot.students -inputSnapshot.courses -inputSnapshot.preferences -inputSnapshot.timetable -inputSnapshot.fixedTimetable"
   );
 
   const contained = containedAlgorithms(run);
@@ -163,6 +231,8 @@ export async function getRunSummary(runId) {
       difference,
       note: POLICY_NOTE,
       warnings,
+      // student-by-student comparison with the baseline (null when it cannot be computed)
+      evidence: both ? await comparisonEvidence(run) : null,
     },
   };
 }
@@ -204,7 +274,7 @@ export async function getResultsByStudent(runId, query = {}) {
     byStudent.get(sid).courses.push({
       courseCode: a.course?.courseCode ?? null,
       title: a.course?.title ?? null,
-      electiveGroup: a.course?.electiveGroup ?? null,
+      electiveGroup: a.electiveGroup ?? a.course?.electiveGroup ?? null,
       preferenceRank: a.preferenceRank,
       phase: a.phase ?? null,
       iteration: a.iteration ?? null,
@@ -266,10 +336,14 @@ export async function getResultsByCourse(runId, query = {}) {
 
   const rows = await loadAssignments(run, algorithm);
 
-  const demand = new Map();
+  // Demand counts students, not lists: a course ranked in two groups' lists by
+  // the same student is one request.
+  const demandBy = new Map();
   for (const p of run.inputSnapshot?.preferences ?? []) {
-    demand.set(p.courseId, (demand.get(p.courseId) ?? 0) + 1);
+    if (!demandBy.has(p.courseId)) demandBy.set(p.courseId, new Set());
+    demandBy.get(p.courseId).add(p.studentId);
   }
+  const demand = new Map([...demandBy].map(([course, students]) => [course, students.size]));
 
   const byCourse = new Map();
   for (const c of run.inputSnapshot?.courses ?? []) {
@@ -292,6 +366,7 @@ export async function getResultsByCourse(runId, query = {}) {
       preferenceRank: a.preferenceRank,
       phase: a.phase ?? null,
       iteration: a.iteration ?? null,
+      electiveGroup: a.electiveGroup ?? null,
     });
   }
 
@@ -372,7 +447,7 @@ export async function buildRunCsv(runId, { algorithm: requested } = {}) {
       [
         String(run._id), run.semesterId, algorithm,
         a.student?.studentId, a.student?.name, a.student?.cgpa, a.student?.department,
-        a.course?.courseCode, a.course?.title, a.course?.electiveGroup,
+        a.course?.courseCode, a.course?.title, a.electiveGroup ?? a.course?.electiveGroup,
         a.preferenceRank, a.phase, a.iteration, a.status,
       ]
         .map(csvCell)

@@ -24,6 +24,8 @@ import { hashPassword } from "./auth.service.js";
 import { generateTemporaryPassword } from "../utils/password.js";
 import { parseCsv, CsvParseError, buildCsv } from "../utils/csv.js";
 import { WEEKDAYS, isValidSlot, timeToMinutes } from "../utils/timetable.js";
+import { COURSE_KINDS, cleanDepartments, courseKindProblem } from "../utils/courseKind.js";
+import { courseFitsGroup, listLengthProblem } from "../utils/preferenceRules.js";
 import { ApiError } from "../utils/ApiError.js";
 import { logger } from "../utils/logger.js";
 
@@ -358,7 +360,7 @@ export function parseTimetableCell(cell) {
 export async function importCourses(text, { dryRun = false, onExisting = "skip" } = {}) {
   const spec = {
     required: ["courseCode", "title", "capacity", "semesterId", "electiveGroup"],
-    optional: ["timetable", "isActive"],
+    optional: ["timetable", "isActive", "kind", "departments"],
   };
   const { rows, columns, problems } = readTable(text, spec);
 
@@ -369,9 +371,21 @@ export async function importCourses(text, { dryRun = false, onExisting = "skip" 
     if (!courseCode) problems.add(line, "courseCode", "courseCode is required.");
     if (!values.title) problems.add(line, "title", "title is required.");
     if (!values.semesterId) problems.add(line, "semesterId", "semesterId is required.");
-    if (!values.electiveGroup) problems.add(line, "electiveGroup", "electiveGroup is required.");
 
-    const capacity = values.capacity === "" ? NaN : Number(values.capacity);
+    // kind defaults to elective; departments are separated by semicolons
+    const kind = (values.kind || "elective").toLowerCase();
+    const departments = cleanDepartments(String(values.departments ?? "").split(";"));
+    if (!COURSE_KINDS.includes(kind)) {
+      problems.add(line, "kind", "kind must be elective or compulsory.");
+    } else if (kind === "compulsory") {
+      const problem = courseKindProblem({ kind, electiveGroup: values.electiveGroup, departments });
+      if (problem) problems.add(line, "kind", problem);
+    }
+    // An elective with a blank electiveGroup is open to every group (a shared pool).
+
+    // Seats only matter for electives; a compulsory row may leave capacity empty
+    let capacity = values.capacity === "" ? NaN : Number(values.capacity);
+    if (kind === "compulsory" && values.capacity === "") capacity = 0;
     if (!Number.isInteger(capacity) || capacity < 0) problems.add(line, "capacity", "capacity must be a whole number, 0 or more.");
 
     const key = `${courseCode}::${values.semesterId}`;
@@ -395,7 +409,8 @@ export async function importCourses(text, { dryRun = false, onExisting = "skip" 
 
     parsed.push({
       line, courseCode, title: values.title, capacity, semesterId: values.semesterId,
-      electiveGroup: values.electiveGroup, timetableSlots, isActive,
+      electiveGroup: kind === "compulsory" ? null : values.electiveGroup || null, kind, departments,
+      timetableSlots, isActive,
     });
   }
   problems.throwIfAny();
@@ -427,7 +442,8 @@ export async function importCourses(text, { dryRun = false, onExisting = "skip" 
       const inserted = await Course.insertMany(
         toCreate.map((r) => ({
           courseCode: r.courseCode, title: r.title, capacity: r.capacity, semesterId: r.semesterId,
-          electiveGroup: r.electiveGroup, timetableSlots: r.timetableSlots ?? [], isActive: r.isActive ?? true,
+          electiveGroup: r.electiveGroup, kind: r.kind, departments: r.departments,
+          timetableSlots: r.timetableSlots ?? [], isActive: r.isActive ?? true,
         })),
         { ordered: true }
       );
@@ -436,7 +452,10 @@ export async function importCourses(text, { dryRun = false, onExisting = "skip" 
     if (toUpdate.length) {
       await Course.bulkWrite(
         toUpdate.map((r) => {
-          const set = { title: r.title, capacity: r.capacity, electiveGroup: r.electiveGroup };
+          const set = {
+            title: r.title, capacity: r.capacity, electiveGroup: r.electiveGroup,
+            kind: r.kind, departments: r.departments,
+          };
           if (r.timetableSlots) set.timetableSlots = r.timetableSlots;
           if (r.isActive !== undefined) set.isActive = r.isActive;
           return { updateOne: { filter: { courseCode: r.courseCode, semesterId: r.semesterId }, update: { $set: set } } };
@@ -505,9 +524,23 @@ export async function importPreferences(text, { dryRun = false, onExisting = "sk
     courseCode: { $in: [...new Set(parsed.map((p) => p.courseCode))] },
     semesterId: { $in: [...new Set(parsed.map((p) => p.semesterId))] },
   })
-    .select("courseCode semesterId electiveGroup isActive")
+    .select("courseCode semesterId electiveGroup isActive kind")
     .lean();
   const courseByKey = new Map(courses.map((c) => [`${c.semesterId}::${c.courseCode}`, c]));
+
+  // every active elective of each semester, to know how many courses a list may choose from
+  const pool = await Course.find({
+    semesterId: { $in: [...new Set(parsed.map((p) => p.semesterId))] },
+    isActive: true,
+    kind: { $ne: "compulsory" },
+  })
+    .select("semesterId electiveGroup")
+    .lean();
+  const poolBySemester = new Map();
+  for (const c of pool ?? []) {
+    if (!poolBySemester.has(c.semesterId)) poolBySemester.set(c.semesterId, []);
+    poolBySemester.get(c.semesterId).push(c.electiveGroup ?? null);
+  }
 
   const lists = [];
   for (const group of groups.values()) {
@@ -540,12 +573,22 @@ export async function importPreferences(text, { dryRun = false, onExisting = "sk
         problems.add(item.line, "courseCode", `No course "${item.courseCode}" in semester "${group.semesterId}".`);
       } else {
         if (course.isActive === false) problems.add(item.line, "courseCode", `Course "${item.courseCode}" is not active.`);
-        if (course.electiveGroup !== group.electiveGroup) {
+        if (!courseFitsGroup(course.electiveGroup, group.electiveGroup)) {
           problems.add(item.line, "courseCode", `Course "${item.courseCode}" is not in elective group "${group.electiveGroup}".`);
+        }
+        if (course.kind === "compulsory") {
+          problems.add(item.line, "courseCode", `Course "${item.courseCode}" is compulsory and cannot be ranked.`);
         }
         courseIds.push(course._id);
       }
     }
+    // A list has at most 15 courses; a submitted list must be full (15, or all available).
+    const poolSize = (poolBySemester.get(group.semesterId) ?? []).filter((g) =>
+      courseFitsGroup(g, group.electiveGroup)
+    ).length;
+    const lengthProblem = listLengthProblem({ count: ordered.length, status, poolSize });
+    if (lengthProblem) problems.add(first.line, "courseCode", `${group.studentId}, group ${group.electiveGroup}: ${lengthProblem}`);
+
     lists.push({ ...group, student, courseIds });
   }
   problems.throwIfAny();

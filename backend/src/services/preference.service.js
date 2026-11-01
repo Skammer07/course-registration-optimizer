@@ -32,6 +32,7 @@ import Preference from "../models/Preference.js";
 import Course from "../models/Course.js";
 import Student from "../models/Student.js";
 import { ApiError } from "../utils/ApiError.js";
+import { courseFitsGroup, listLengthProblem } from "../utils/preferenceRules.js";
 import { assertPreferencesOpen } from "./semester.service.js";
 
 /**
@@ -63,7 +64,13 @@ async function validateCourseIds(rankedCourseIds, semesterId, electiveGroup) {
         `Course "${course.courseCode}" does not belong to semester "${semesterId}".`
       );
     }
-    if (course.electiveGroup !== electiveGroup) {
+    if (course.kind === "compulsory") {
+      throw ApiError.badRequest(
+        `Course "${course.courseCode}" is compulsory and cannot be ranked.`
+      );
+    }
+    // A course with no group is open to every group; one with a group only to that group.
+    if (!courseFitsGroup(course.electiveGroup, electiveGroup)) {
       throw ApiError.badRequest(
         `Course "${course.courseCode}" does not belong to elective group "${electiveGroup}".`
       );
@@ -152,6 +159,17 @@ export async function upsertPreference(studentObjectId, data) {
   );
 
   await validateCourseIds(courseObjectIds, semesterId, electiveGroup);
+
+  // At most 15 choices; a submitted list must be full (15, or every course
+  // available when there are fewer). A draft may still be shorter.
+  const poolSize = await Course.countDocuments({
+    semesterId,
+    isActive: true,
+    kind: { $ne: "compulsory" },
+    $or: [{ electiveGroup: null }, { electiveGroup }],
+  });
+  const lengthProblem = listLengthProblem({ count: rankedCourseIds.length, status, poolSize });
+  if (lengthProblem) throw ApiError.badRequest(lengthProblem);
 
   const update = {
     rankedCourseIds: courseObjectIds,

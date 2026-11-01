@@ -508,6 +508,25 @@
           }
         },
         {
+          "name": "My compulsory courses (student)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/courses/my-compulsory",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "courses",
+                "my-compulsory"
+              ]
+            },
+            "description": "Student only. The signed-in student's own compulsory courses for their semester (matched by department), with weekly times. Not part of the allocation: electives that overlap these are never given."
+          }
+        },
+        {
           "name": "Get Course by ID",
           "request": {
             "method": "GET",
@@ -528,7 +547,26 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"courseCode\": \"CS301\",\n  \"title\": \"Data Structures\",\n  \"capacity\": 60,\n  \"semesterId\": \"{{semesterId}}\",\n  \"electiveGroup\": \"A\",\n  \"timetableSlots\": [{\"day\": \"Monday\", \"start\": \"09:00\", \"end\": \"09:50\"}]\n}"
-            }
+            },
+            "description": "Admin or faculty. Leave electiveGroup out (or null) for an open elective offered to every group from one shared pool; set it to offer the course to that group only."
+          }
+        },
+        {
+          "name": "Create compulsory course",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/courses",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"courseCode\": \"MA201\",\n  \"title\": \"Engineering Mathematics III\",\n  \"kind\": \"compulsory\",\n  \"departments\": [\"CSE\", \"ECE\"],\n  \"semesterId\": \"{{semesterId}}\",\n  \"timetableSlots\": [{\"day\": \"Monday\", \"start\": \"09:00\", \"end\": \"09:50\"}]\n}"
+            },
+            "description": "Admin or faculty. A compulsory course has no seats and no elective group; it needs at least one department. Its slots are fixed for every student of those departments."
           }
         },
         {
@@ -711,7 +749,8 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"semesterId\": \"{{semesterId}}\",\n  \"electiveGroup\": \"A\",\n  \"rankedCourseIds\": [\"<course-object-id-1>\", \"<course-object-id-2>\"],\n  \"status\": \"submitted\"\n}"
-            }
+            },
+            "description": "Student only. One priority list per elective group (OE1, OE2, ...), best first, at most 15 courses. A submitted list must be full (15, or every available course when fewer exist); a draft may be shorter. A course with no group of its own is open to every group, so both lists can use the same courses."
           }
         },
         {
@@ -777,9 +816,9 @@
             "url": "{{baseUrl}}/api/v1/allocations/compare",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"semesterId\": \"{{semesterId}}\",\n  \"maxCoursesPerStudent\": 2,\n  \"meritRatio\": 0.75,\n  \"randomRatio\": 0.25,\n  \"includeTimetable\": true,\n  \"seed\": 12345\n}"
+              "raw": "{\n  \"semesterId\": \"{{semesterId}}\",\n  \"maxCoursesPerStudent\": 2,\n  \"meritRatio\": 0.7,\n  \"randomRatio\": 0.3,\n  \"includeTimetable\": true,\n  \"seed\": 12345\n}"
             },
-            "description": "Admin only. Loads data from DB, runs both algorithms, persists the run. meritRatio + randomRatio must equal exactly 1.0 (e.g. 0.75 + 0.25; 0/1 and 1/0 are valid). Returns 400 otherwise. Optional seed (integer) makes the baseline lottery reproducible; it is stored on the run."
+            "description": "Admin only. Loads data from DB, runs both algorithms, persists the run. meritRatio + randomRatio must equal exactly 1.0 (e.g. 0.7 + 0.3, the default; 0/1 and 1/0 are valid). Returns 400 otherwise. Optional seed (integer) makes the baseline lottery reproducible; it is stored on the run."
           }
         },
         {
@@ -795,7 +834,7 @@
             "url": "{{baseUrl}}/api/v1/allocations/run",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"semesterId\": \"{{semesterId}}\",\n  \"algorithm\": \"baseline\",\n  \"maxCoursesPerStudent\": 2,\n  \"meritRatio\": 0.75,\n  \"randomRatio\": 0.25,\n  \"includeTimetable\": true,\n  \"seed\": 12345\n}"
+              "raw": "{\n  \"semesterId\": \"{{semesterId}}\",\n  \"algorithm\": \"baseline\",\n  \"maxCoursesPerStudent\": 2,\n  \"meritRatio\": 0.7,\n  \"randomRatio\": 0.3,\n  \"includeTimetable\": true,\n  \"seed\": 12345\n}"
             },
             "description": "Admin only. Runs only the baseline (merit + random). meritRatio/randomRatio must sum to 1; seed makes the lottery reproducible."
           }

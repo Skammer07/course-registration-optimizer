@@ -66,7 +66,7 @@ vi.mock("../../src/models/Student.js", () => ({
 }));
 vi.mock("../../src/models/Course.js", () => ({
   default: {
-    find: (f) => chain(() => db.courses.filter((c) => inList(f.courseCode).includes(c.courseCode) && (!f.semesterId || inList(f.semesterId).includes(c.semesterId)))),
+    find: (f) => chain(() => db.courses.filter((c) => (!f.courseCode || inList(f.courseCode).includes(c.courseCode)) && (!f.semesterId || inList(f.semesterId).includes(c.semesterId)) && (!f.isActive || c.isActive !== false))),
     insertMany: async (docs) => { calls.courseInsert.push(docs); const made = docs.map((d) => ({ ...d, _id: oid() })); db.courses.push(...made); return made; },
     deleteMany: async (f) => { calls.courseDelete.push(f); return {}; },
     bulkWrite: async (ops) => { calls.courseBulk.push(ops); return {}; },
@@ -366,12 +366,12 @@ describe("POST /imports/courses", () => {
       "C5,E,10,SEM-1,A,Monday 25:00-26:00",  // 6 bad time
       "C6,F,10,SEM-1,A,whenever",            // 7 format
       ",G,10,SEM-1,A,",                      // 8 no code
-      "C1,H,10,SEM-1,,",                     // 9 dup code+sem, no group
+      "C1,H,10,SEM-1,,",                     // 9 dup code+sem (a blank group is allowed: open to every group)
     ].join("\n");
     const res = await send("courses", csv);
     expect(res.status).toBe(422);
     const rows = res.body.error.details.map((d) => `${d.row}:${d.column}`);
-    for (const expected of ["2:capacity", "3:capacity", "4:timetable", "5:timetable", "6:timetable", "7:timetable", "8:courseCode", "9:courseCode", "9:electiveGroup"]) {
+    for (const expected of ["2:capacity", "3:capacity", "4:timetable", "5:timetable", "6:timetable", "7:timetable", "8:courseCode", "9:courseCode"]) {
       expect(rows).toContain(expected);
     }
     expect(calls.courseInsert).toHaveLength(0);
@@ -380,6 +380,52 @@ describe("POST /imports/courses", () => {
   it("the same code in a different semester is allowed", async () => {
     const csv = "courseCode,title,capacity,semesterId,electiveGroup\nC1,A,10,SEM-1,A\nC1,A,10,SEM-2,A";
     expect((await send("courses", csv)).body.data.created).toBe(2);
+  });
+
+  describe("kind and departments", () => {
+    const HEADER = "courseCode,title,capacity,semesterId,electiveGroup,timetable,kind,departments";
+
+    it("imports a compulsory course with departments and no capacity or group", async () => {
+      const csv = [
+        HEADER,
+        "ma101,Maths,,SEM-1,,Monday 09:00-09:50,compulsory,CSE; ece ;cse",
+        "cs101,Algorithms,30,SEM-1,A,,,",
+      ].join("\n");
+      const res = await send("courses", csv);
+      expect(res.status).toBe(200);
+      const [maths, algo] = calls.courseInsert[0];
+      expect(maths).toMatchObject({
+        courseCode: "MA101", kind: "compulsory", electiveGroup: null, capacity: 0,
+        departments: ["CSE", "ece"],
+      });
+      // a row with no kind is an elective, as before
+      expect(algo).toMatchObject({ kind: "elective", departments: [], electiveGroup: "A", capacity: 30 });
+    });
+
+    it("rejects a compulsory row without departments, and an unknown kind", async () => {
+      const csv = [
+        HEADER,
+        "ma101,Maths,,SEM-1,,,compulsory,",
+        "ma102,Maths 2,,SEM-1,,,optional,CSE",
+      ].join("\n");
+      const res = await send("courses", csv);
+      expect(res.status).toBe(422);
+      const rows = res.body.error.details.map((d) => `${d.row}:${d.column}`);
+      expect(rows).toContain("2:kind");
+      expect(rows).toContain("3:kind");
+      expect(calls.courseInsert).toHaveLength(0);
+    });
+
+    it("still requires seats for an elective, but a blank group means open to every group", async () => {
+      const res = await send("courses", [HEADER, "cs1,A,,SEM-1,,,elective,"].join("\n"));
+      expect(res.status).toBe(422);
+      const rows = res.body.error.details.map((d) => `${d.row}:${d.column}`);
+      expect(rows).toEqual(["2:capacity"]);
+
+      const open = await send("courses", [HEADER, "cs2,B,30,SEM-1,,,elective,"].join("\n"));
+      expect(open.status).toBe(200);
+      expect(calls.courseInsert.at(-1)[0]).toMatchObject({ courseCode: "CS2", electiveGroup: null, capacity: 30, kind: "elective" });
+    });
   });
 
   it("existing courses (same code and semester) are skipped, or updated on request; dry run writes nothing", async () => {
@@ -423,10 +469,11 @@ describe("POST /imports/preferences", () => {
   const HEAD = "studentId,semesterId,electiveGroup,courseCode,rank\n";
 
   it("builds one ordered list per student/semester/group, whatever the row order", async () => {
-    const csv = HEAD + "s1,SEM-1,A,C2,2\ns1,SEM-1,A,C1,1\nS2,SEM-1,A,C2,1\nS2,SEM-1,B,C3,1";
+    // a submitted list must hold every course the group can choose from (here 2 in group A, 1 in B)
+    const csv = HEAD + "s1,SEM-1,A,C2,2\ns1,SEM-1,A,C1,1\nS2,SEM-1,A,C2,1\nS2,SEM-1,A,C1,2\nS2,SEM-1,B,C3,1";
     const res = await send("preferences", csv);
     expect(res.status).toBe(200);
-    expect(res.body.data).toMatchObject({ totalRows: 4, lists: 3, created: 3, status: "submitted" });
+    expect(res.body.data).toMatchObject({ totalRows: 5, lists: 3, created: 3, status: "submitted" });
     const ops = calls.prefBulk[0].map((o) => o.updateOne);
     const s1 = ops.find((o) => String(o.filter.student) === S1);
     expect(s1.update.$set.rankedCourseIds).toEqual(["c-1", "c-2"]); // rank order, not file order
@@ -473,9 +520,38 @@ describe("POST /imports/preferences", () => {
     expect(res.body.error.details.map((d) => d.column).sort()).toEqual(["courseCode", "studentId"]);
   });
 
+  it("a submitted list must be full; a draft may be shorter; a list never has more than 15", async () => {
+    const short = await send("preferences", HEAD + "S1,SEM-1,A,C1,1");
+    expect(short.status).toBe(422);
+    expect(short.body.error.details[0].message).toMatch(/exactly 2 courses/);
+
+    const draft = await send("preferences", HEAD + "S1,SEM-1,A,C1,1", { q: "?status=draft" });
+    expect(draft.status).toBe(200);
+
+    // 17 more open electives: a pool large enough that a list could be too long
+    for (let i = 4; i <= 20; i++) db.courses.push({ _id: `c-${i}`, courseCode: `C${i}`, semesterId: "SEM-1", electiveGroup: null, isActive: true });
+    const rows = Array.from({ length: 16 }, (_, i) => `S2,SEM-1,A,C${i + 4},${i + 1}`);
+    const many = await send("preferences", HEAD + rows.join("\n"), { q: "?status=draft" });
+    expect(many.status).toBe(422);
+    expect(JSON.stringify(many.body.error.details)).toMatch(/at most 15/);
+  });
+
+  it("a course with no group is open to every group's list, and the same course can be in two lists", async () => {
+    db.courses.length = 0;
+    db.courses.push(
+      { _id: "o-1", courseCode: "O1", semesterId: "SEM-1", electiveGroup: null, isActive: true },
+      { _id: "o-2", courseCode: "O2", semesterId: "SEM-1", electiveGroup: null, isActive: true }
+    );
+    db.students[1].electiveGroups = ["OE1", "OE2"];
+    const csv = HEAD + ["S2,SEM-1,OE1,O1,1", "S2,SEM-1,OE1,O2,2", "S2,SEM-1,OE2,O1,1", "S2,SEM-1,OE2,O2,2"].join("\n");
+    const res = await send("preferences", csv);
+    expect(res.status).toBe(200);
+    expect(res.body.data).toMatchObject({ lists: 2, created: 2 });
+  });
+
   it("existing lists are skipped by default, replaced on request, and a dry run writes nothing", async () => {
     db.prefs.push({ student: S1, semesterId: "SEM-1", electiveGroup: "A" });
-    const csv = HEAD + "S1,SEM-1,A,C1,1\nS2,SEM-1,A,C2,1";
+    const csv = HEAD + "S1,SEM-1,A,C1,1\nS1,SEM-1,A,C2,2\nS2,SEM-1,A,C2,1\nS2,SEM-1,A,C1,2";
     const skip = await send("preferences", csv);
     expect(skip.body.data).toMatchObject({ created: 1, skipped: 1, updated: 0 });
     expect(calls.prefBulk[0]).toHaveLength(1);

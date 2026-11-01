@@ -19,6 +19,9 @@ router.use(requireAuth);
 
 router.get("/", validate(courseQuerySchema, "query"), ctrl.list);
 
+// A student's own compulsory courses (declared before /:id so it is not read as an id)
+router.get("/my-compulsory", requireRole("student"), ctrl.myCompulsory);
+
 router.get("/:id", ctrl.getOne);
 
 router.post(

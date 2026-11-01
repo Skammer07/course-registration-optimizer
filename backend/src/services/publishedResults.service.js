@@ -78,7 +78,7 @@ export async function getMyPublishedResults(studentObjectId) {
     course: {
       courseCode: a.course?.courseCode ?? null,
       title: a.course?.title ?? null,
-      electiveGroup: a.course?.electiveGroup ?? null,
+      electiveGroup: a.electiveGroup ?? a.course?.electiveGroup ?? null,
     },
     preferenceRank: a.preferenceRank,
     phase: a.phase ?? null,

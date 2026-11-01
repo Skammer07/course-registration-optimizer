@@ -27,6 +27,7 @@
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { ApiError } from "../utils/ApiError.js";
+import { compulsoryCoursesForDepartment } from "../utils/courseKind.js";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Worker } from "node:worker_threads";
 
@@ -355,11 +356,66 @@ export function prepareInputs({ students, courses, preferences, includeTimetable
   };
 }
 
+/** A compulsory course is fixed in a student's week; it is never allocated. */
+export const isCompulsoryCourse = (course) => course?.kind === "compulsory";
+
+/**
+ * Each student's compulsory-course slots: every active compulsory course whose
+ * departments include the student's department (compared ignoring case and
+ * spacing). Used so electives that overlap them are never allocated.
+ *
+ * @returns {{ fixedTimetable: object|null, messages: string[] }}
+ *   fixedTimetable is { [studentId]: [{ day, start, end }] }, or null when no
+ *   compulsory course has slots. messages are run warnings.
+ */
+export function buildFixedTimetable({ students, compulsoryCourses = [] }) {
+  const messages = [];
+  const withSlots = compulsoryCourses.filter((c) => c.timetableSlots?.length > 0);
+
+  const noSlots = compulsoryCourses.filter((c) => !c.timetableSlots?.length);
+  if (noSlots.length > 0) {
+    messages.push(
+      `Compulsory course(s) without timetable slots cannot block electives: ${noSlots
+        .slice(0, 10)
+        .map((c) => c.courseCode)
+        .join(", ")}${noSlots.length > 10 ? ` (+${noSlots.length - 10} more)` : ""}.`
+    );
+  }
+
+  if (withSlots.length === 0) return { fixedTimetable: null, messages };
+
+  const ordered = [...withSlots].sort((a, b) => a.courseCode.localeCompare(b.courseCode));
+  const fixedTimetable = {};
+  let studentsWithoutMatch = 0;
+
+  for (const student of students) {
+    const slots = [];
+
+    for (const course of compulsoryCoursesForDepartment(ordered, student.department)) {
+      for (const slot of course.timetableSlots) {
+        slots.push({ day: slot.day, start: slot.start, end: slot.end });
+      }
+    }
+
+    if (slots.length > 0) fixedTimetable[student.studentId] = slots;
+    else studentsWithoutMatch++;
+  }
+
+  if (studentsWithoutMatch > 0) {
+    messages.push(
+      `${studentsWithoutMatch} student(s) have no matching compulsory course ` +
+        "(department missing or not listed on any compulsory course), so no compulsory slots were applied to them."
+    );
+  }
+
+  return { fixedTimetable, messages };
+}
+
 /**
  * Order-independent SHA-256 of the normalized input, so two runs over the same
  * data get the same fingerprint regardless of database return order.
  */
-export function fingerprintInput({ algStudents, algCourses, algPreferences, timetable }) {
+export function fingerprintInput({ algStudents, algCourses, algPreferences, timetable, fixedTimetable }) {
   const by = (k) => (a, b) => String(a[k]).localeCompare(String(b[k]));
   const canonical = {
     students: [...algStudents].sort(by("id")),
@@ -372,22 +428,61 @@ export function fingerprintInput({ algStudents, algCourses, algPreferences, time
       ? Object.fromEntries(Object.entries(timetable).sort(([x], [y]) => x.localeCompare(y)))
       : null,
   };
+  // Only present when compulsory slots were used, so runs without them keep
+  // the fingerprint they always had.
+  if (fixedTimetable) {
+    canonical.fixedTimetable = Object.fromEntries(
+      Object.entries(fixedTimetable).sort(([x], [y]) => x.localeCompare(y))
+    );
+  }
   return createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
 }
 
-function buildInput({ students, courses, preferences, includeTimetable }) {
+function buildInput({ students, courses, preferences, includeTimetable, fixedTimetable = null }) {
   const algStudents = normalizeStudents(students);
   const algCourses = normalizeCourses(courses);
   const algPreferences = normalizePreferences(preferences);
   const timetable = includeTimetable ? buildTimetableMap(courses) : null;
-  return { algStudents, algCourses, algPreferences, timetable };
+  // Compulsory slots only make sense together with the elective timetable.
+  return {
+    algStudents,
+    algCourses,
+    algPreferences,
+    timetable,
+    fixedTimetable: timetable ? fixedTimetable : null,
+  };
 }
+
+/**
+ * Limits on the optimizer's timetable search. The work limit (edges the flow
+ * solver looks at) is the main one: it is the same on every machine, so the same
+ * input always stops at the same point and results reproduce. The solve count is
+ * a second deterministic cap, and the time limit is only a safety net below the
+ * worker's own time limit. When a limit is hit the result is still clash-free and
+ * valid, but the optimizer reports `optimal: false` with the best bound it could
+ * still reach.
+ */
+export const OPTIMIZER_MAX_WORK = 2.5e9; // about 12 seconds on a typical machine
+export const OPTIMIZER_MAX_FLOW_SOLVES = 2000;
+export const OPTIMIZER_SEARCH_TIME_LIMIT_MS = 30000;
+
+const searchLimits = (options) => ({
+  maxWork: options.maxWork ?? OPTIMIZER_MAX_WORK,
+  maxFlowSolves: options.maxFlowSolves ?? OPTIMIZER_MAX_FLOW_SOLVES,
+  searchTimeLimitMs: options.searchTimeLimitMs ?? OPTIMIZER_SEARCH_TIME_LIMIT_MS,
+});
 
 function buildOptions(options) {
   return {
+    ...searchLimits(options),
     maxCoursesPerStudent: options.maxCoursesPerStudent ?? 2,
-    meritRatio: options.meritRatio ?? 0.75,
-    randomRatio: options.randomRatio ?? 0.25,
+    meritRatio: options.meritRatio ?? 0.7,
+    randomRatio: options.randomRatio ?? 0.3,
+    // each student gets at most one course from each elective group
+    oneCoursePerGroup: options.oneCoursePerGroup ?? true,
+    // the optimizer may not leave any student worse than the baseline's result, and uses CGPA itself
+    optimizerFloor: options.optimizerFloor ?? "baseline",
+    cgpaPriority: options.cgpaPriority ?? true,
     // undefined -> the algorithm generates a seed and reports it back
     seed: options.seed,
   };
@@ -409,15 +504,17 @@ export async function runComparison({
   courses,
   preferences,
   includeTimetable = true,
+  fixedTimetable = null,
   options = {},
   runId = null,
 }) {
-  const snapshot = buildInput({ students, courses, preferences, includeTimetable });
+  const snapshot = buildInput({ students, courses, preferences, includeTimetable, fixedTimetable });
   const input = {
     students: snapshot.algStudents,
     courses: snapshot.algCourses,
     preferences: snapshot.algPreferences,
     timetable: snapshot.timetable,
+    fixedTimetable: snapshot.fixedTimetable,
   };
 
   // The algorithm receives its own deep copy (structured clone) so it can
@@ -444,15 +541,17 @@ export async function runSingle({
   courses,
   preferences,
   includeTimetable = true,
+  fixedTimetable = null,
   options = {},
   runId = null,
 }) {
-  const snapshot = buildInput({ students, courses, preferences, includeTimetable });
+  const snapshot = buildInput({ students, courses, preferences, includeTimetable, fixedTimetable });
   const input = {
     students: snapshot.algStudents,
     courses: snapshot.algCourses,
     preferences: snapshot.algPreferences,
     timetable: snapshot.timetable,
+    fixedTimetable: snapshot.fixedTimetable,
   };
 
   const singleOptions = { ...buildOptions(options), algorithm };
@@ -482,8 +581,9 @@ export async function runFromSnapshot({ algorithm, snapshot, options = {} }) {
     courses: snapshot.courses,
     preferences: snapshot.preferences,
     timetable: snapshot.timetable ?? null,
+    fixedTimetable: snapshot.fixedTimetable ?? null,
   });
-  const singleOptions = { ...options, algorithm };
+  const singleOptions = { ...searchLimits(options), ...options, algorithm };
   if (_singleOverridden) {
     const { runSingleAllocation } = await getSingleService();
     return runSingleAllocation(input, singleOptions);

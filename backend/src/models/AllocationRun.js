@@ -35,6 +35,10 @@ const metricsSchema = new mongoose.Schema(
     studentLimitViolations: Number,
     duplicateAssignments: Number,
     timetableClashes: Number,
+    // elective groups and CGPA priority (see the algorithm design doc)
+    groupLimitViolations: Number,
+    studentsMissingAGroup: Number,
+    cgpaPriorityViolations: Number,
     constraintViolations: Number,
   },
   { _id: false }
@@ -65,6 +69,8 @@ const inputSnapshotSchema = new mongoose.Schema(
     courses: { type: [mongoose.Schema.Types.Mixed], default: null },
     preferences: { type: [mongoose.Schema.Types.Mixed], default: null },
     timetable: { type: mongoose.Schema.Types.Mixed, default: null },
+    // Each student's compulsory-course slots; null when none were applied
+    fixedTimetable: { type: mongoose.Schema.Types.Mixed, default: null },
   },
   { _id: false }
 );
@@ -106,9 +112,17 @@ const allocationRunSchema = new mongoose.Schema(
     configuration: {
       maxCoursesPerStudent: { type: Number, default: 2 },
       // null for optimizer-only runs (ratios do not apply to the optimizer)
-      meritRatio: { type: Number, default: 0.75 },
-      randomRatio: { type: Number, default: 0.25 },
+      meritRatio: { type: Number, default: 0.7 },
+      randomRatio: { type: Number, default: 0.3 },
       timetableValidationEnabled: { type: Boolean, default: false },
+      // true when the run limited every student to one course per elective group;
+      // runs stored before this rule existed read as false and are checked as before
+      oneCoursePerGroup: { type: Boolean, default: false },
+      // "baseline": the optimizer may not leave any student worse than the baseline result; "none": unconstrained.
+      // null for runs stored before this existed.
+      optimizerFloor: { type: String, default: null },
+      // true when the optimizer uses CGPA itself (higher CGPA gets the better choices among equal results)
+      cgpaPriority: { type: Boolean, default: false },
     },
     // Summary metrics for each algorithm variant
     baselineMetrics: { type: metricsSchema, default: null },

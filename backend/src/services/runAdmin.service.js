@@ -136,7 +136,11 @@ export async function verifyRun(runId, { algorithm } = {}) {
 
   const results = [];
   for (const alg of targets) {
-    const options = { maxCoursesPerStudent: run.configuration?.maxCoursesPerStudent ?? 2 };
+    // runs stored before the group rule existed are replayed without it
+    const options = {
+      maxCoursesPerStudent: run.configuration?.maxCoursesPerStudent ?? 2,
+      oneCoursePerGroup: run.configuration?.oneCoursePerGroup ?? false,
+    };
     if (alg === "baseline") {
       if (run.randomSeed === null || run.randomSeed === undefined) {
         results.push({
@@ -147,6 +151,24 @@ export async function verifyRun(runId, { algorithm } = {}) {
       options.seed = run.randomSeed;
       options.meritRatio = run.configuration?.meritRatio ?? 0.75;
       options.randomRatio = run.configuration?.randomRatio ?? 0.25;
+    } else {
+      // Runs stored before the floor existed had an unconstrained optimizer; newer ones are held to the
+      // baseline's own result, which is recomputed from the stored seed and split.
+      options.optimizerFloor = run.configuration?.optimizerFloor ?? "none";
+      options.cgpaPriority = run.configuration?.cgpaPriority ?? false;
+
+      if (options.optimizerFloor === "baseline") {
+        if (run.randomSeed === null || run.randomSeed === undefined) {
+          results.push({
+            algorithm: alg, matches: null,
+            reason: "No random seed was stored for the baseline this optimizer run was held to, so it cannot be replayed.",
+          });
+          continue;
+        }
+        options.seed = run.randomSeed;
+        options.meritRatio = run.configuration?.meritRatio ?? 0.7;
+        options.randomRatio = run.configuration?.randomRatio ?? 0.3;
+      }
     }
 
     // Without the timetable the original could have been unconstrained: replay
@@ -156,6 +178,7 @@ export async function verifyRun(runId, { algorithm } = {}) {
       courses: snapshot.courses,
       preferences: snapshot.preferences,
       timetable: snapshot.timetableIncluded === false ? null : snapshot.timetable ?? null,
+      fixedTimetable: snapshot.timetableIncluded === false ? null : snapshot.fixedTimetable ?? null,
     };
 
     let replay;

@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { generateDataset, SCENARIOS, SIZES, GROUPS, seedEmail } from "../../src/seed/generateDataset.js";
+import { generateDataset, SCENARIOS, OPEN_ELECTIVES, OPEN_GROUPS, SIZES, GROUPS, seedEmail } from "../../src/seed/generateDataset.js";
 import Student from "../../src/models/Student.js";
 import Course from "../../src/models/Course.js";
 import Preference from "../../src/models/Preference.js";
@@ -169,7 +169,8 @@ describe("every scenario runs through the real algorithms (in a worker thread)",
     const started = Date.now();
     try {
       await expect(
-        runSingle({ ...docs, algorithm: "optimized", includeTimetable: true, options: {} })
+        // the unconstrained optimizer, whose search is the long one
+        runSingle({ ...docs, algorithm: "optimized", includeTimetable: true, options: { optimizerFloor: "none", cgpaPriority: false } })
       ).rejects.toMatchObject({ code: "ALLOCATION_TIMEOUT" });
       expect(Date.now() - started).toBeLessThan(5000);
     } finally {
@@ -177,4 +178,87 @@ describe("every scenario runs through the real algorithms (in a worker thread)",
       else process.env.ALLOCATION_TIMEOUT_MS = prev;
     }
   }, 30_000);
+});
+
+describe("generateDataset - open electives (one shared pool, two independent 15-choice lists)", () => {
+  const make = (size = 200, seed = 1) => generateDataset({ scenario: OPEN_ELECTIVES, size, seed });
+
+  it("is deterministic and keeps the regular scenarios separate", () => {
+    expect(make(60, 3)).toEqual(make(60, 3));
+    expect(make(60, 3)).not.toEqual(make(60, 4));
+    expect(SCENARIOS).not.toContain(OPEN_ELECTIVES);
+  });
+
+  it("makes a pool of courses with no group, and students in OE1 and OE2", () => {
+    const ds = make();
+    expect(ds.courses).toHaveLength(25);
+    expect(ds.courses.every((c) => c.electiveGroup === null && /^SD-P\d{2}$/.test(c.courseCode))).toBe(true);
+    expect(ds.students.every((s) => s.electiveGroups.join() === OPEN_GROUPS.join())).toBe(true);
+    // seats cover the 2 x 200 slots to fill, with some room
+    expect(ds.courses.reduce((n, c) => n + c.capacity, 0)).toBeGreaterThan(400);
+  });
+
+  it("gives every student two lists of exactly 15 different courses, one per group, all from the pool", () => {
+    const ds = make();
+    const codes = new Set(ds.courses.map((c) => c.courseCode));
+    expect(ds.preferences).toHaveLength(200 * 2);
+    for (const p of ds.preferences) {
+      expect(OPEN_GROUPS).toContain(p.electiveGroup);
+      expect(p.courseCodes).toHaveLength(15);
+      expect(new Set(p.courseCodes).size).toBe(15);
+      expect(p.courseCodes.every((c) => codes.has(c))).toBe(true);
+      expect(p.status).toBe("submitted");
+    }
+  });
+
+  it("the number of courses can be set, and lists are 15 long when the pool allows it", () => {
+    const ds = generateDataset({ scenario: OPEN_ELECTIVES, size: 100, seed: 1, courseCount: 20 });
+    expect(ds.courses).toHaveLength(20);
+    expect(ds.preferences.every((p) => p.courseCodes.length === 15)).toBe(true);
+    // about 1.2 x the 200 slots, spread over 20 courses
+    expect(ds.courses.reduce((n, c) => n + c.capacity, 0)).toBeGreaterThan(200);
+    expect(() => generateDataset({ scenario: OPEN_ELECTIVES, size: 100, courseCount: 0 })).toThrow(/courseCount/);
+    // a short pool gives shorter lists
+    expect(generateDataset({ scenario: OPEN_ELECTIVES, size: 20, courseCount: 6 }).preferences.every((p) => p.courseCodes.length === 6)).toBe(true);
+  });
+
+  it("the two lists of a student are drawn independently, so they differ but overlap", () => {
+    const ds = make();
+    let differ = 0, overlap = 0;
+    for (const s of ds.students) {
+      const [a, b] = OPEN_GROUPS.map((g) => ds.preferences.find((p) => p.studentId === s.studentId && p.electiveGroup === g).courseCodes);
+      if (a.join() !== b.join()) differ++;
+      if (a.some((c) => b.includes(c))) overlap++;
+    }
+    expect(differ).toBeGreaterThan(150);
+    expect(overlap).toBe(200); // 15 of 25 each: they always share courses
+  });
+
+  it("every document passes the real Mongoose validation", () => {
+    const ds = make(30, 2);
+    for (const st of ds.students) expect(new Student(st).validateSync()).toBeUndefined();
+    for (const c of ds.courses) expect(new Course(c).validateSync()).toBeUndefined();
+  });
+
+  it("runs cleanly through both real algorithms: valid, one course per group, never the same course twice", async () => {
+    const ds = make(40, 5);
+    const docs = asDocs(ds);
+    const prepared = prepareInputs({ students: docs.students, courses: docs.courses, preferences: docs.preferences, includeTimetable: true });
+
+    const { result } = await runComparison({
+      students: docs.students, courses: docs.courses, preferences: prepared.preferences, includeTimetable: true, options: { seed: 1 },
+    });
+
+    for (const side of [result.baseline, result.optimized]) {
+      expect(side.validation.valid).toBe(true);
+      expect(side.metrics.groupLimitViolations).toBe(0);
+      expect(side.metrics.duplicateAssignments).toBe(0);
+      expect(side.metrics.timetableClashes).toBe(0);
+      for (const st of ds.students) {
+        const mine = side.allocations.filter((a) => a.studentId === st.studentId);
+        expect(new Set(mine.map((a) => a.courseId)).size).toBe(mine.length);
+        expect(new Set(mine.map((a) => a.electiveGroup)).size).toBe(mine.length);
+      }
+    }
+  }, 60000);
 });

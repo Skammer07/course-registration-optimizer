@@ -14,6 +14,8 @@ export const compare = asyncHandler(async (req, res) => {
     meritRatio,
     randomRatio,
     includeTimetable,
+    optimizerFloor,
+    cgpaPriority,
     seed,
   } = req.body;
 
@@ -28,6 +30,8 @@ export const compare = asyncHandler(async (req, res) => {
     meritRatio,
     randomRatio,
     includeTimetable,
+    optimizerFloor,
+    cgpaPriority,
     seed,
     createdByUserId: req.user._id.toString(),
   });

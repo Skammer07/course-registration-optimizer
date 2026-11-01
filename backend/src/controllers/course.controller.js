@@ -31,3 +31,8 @@ export const deactivate = asyncHandler(async (req, res) => {
   return success(res, { course }, "Course deactivated");
 });
 
+
+export const myCompulsory = asyncHandler(async (req, res) => {
+  const data = await courseService.listMyCompulsoryCourses(req.user.student);
+  return success(res, data, "Your compulsory courses retrieved");
+});

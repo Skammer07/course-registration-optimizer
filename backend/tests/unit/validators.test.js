@@ -324,8 +324,8 @@ describe("compareAllocationSchema", () => {
     const result = compareAllocationSchema.safeParse({ semesterId: "SEM2026A" });
     expect(result.success).toBe(true);
     expect(result.data.maxCoursesPerStudent).toBe(2);
-    expect(result.data.meritRatio).toBe(0.75);
-    expect(result.data.randomRatio).toBe(0.25);
+    expect(result.data.meritRatio).toBe(0.7);
+    expect(result.data.randomRatio).toBe(0.3);
   });
 
   it("rejects meritRatio > 1", () => {

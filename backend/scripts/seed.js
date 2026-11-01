@@ -4,7 +4,8 @@
  *   node scripts/seed.js --scenario balanced --size small --semester SEM-SEED --seed 1 --reset --users
  *
  * Options
- *   --scenario  balanced | scarce-seats | many-ties | many-clashes   (default balanced)
+ *   --scenario  balanced | scarce-seats | many-ties | many-clashes | open-electives   (default balanced)
+ *               open-electives: one shared pool of courses and two independent 15-choice lists (OE1, OE2) per student
  *   --size      small(30) | medium(200) | large(1000) | <integer>    (default small)
  *   --semester  semester id to create the data under                 (default SEM-SEED)
  *   --seed      integer; the same seed regenerates the same data     (default 1)
@@ -24,7 +25,7 @@ import Course from "../src/models/Course.js";
 import Preference from "../src/models/Preference.js";
 import User from "../src/models/User.js";
 import { hashPassword } from "../src/services/auth.service.js";
-import { generateDataset, SCENARIOS, SIZES, seedEmail } from "../src/seed/generateDataset.js";
+import { generateDataset, SCENARIOS, OPEN_ELECTIVES, SIZES, seedEmail } from "../src/seed/generateDataset.js";
 
 function parseArgs(argv) {
   const out = {};
@@ -54,8 +55,8 @@ async function main() {
   const semesterId = args.semester ?? "SEM-SEED";
   const seed = args.seed === undefined ? 1 : Number(args.seed);
 
-  if (!SCENARIOS.includes(scenario)) {
-    throw new Error(`Unknown scenario "${scenario}". Use: ${SCENARIOS.join(", ")}`);
+  if (![...SCENARIOS, OPEN_ELECTIVES].includes(scenario)) {
+    throw new Error(`Unknown scenario "${scenario}". Use: ${[...SCENARIOS, OPEN_ELECTIVES].join(", ")}`);
   }
   if (!Number.isInteger(size)) throw new Error("--size must be small|medium|large or an integer.");
   if (!Number.isInteger(seed) || seed < 0) throw new Error("--seed must be a non-negative integer.");

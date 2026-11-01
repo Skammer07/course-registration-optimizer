@@ -12,6 +12,7 @@
 
 import { z } from "zod";
 import { WEEKDAYS, isValidTime, isValidSlot } from "../utils/timetable.js";
+import { COURSE_KINDS, courseKindProblem } from "../utils/courseKind.js";
 
 const timeString = z
   .string()
@@ -41,10 +42,14 @@ const courseBase = z.object({
     .string({ error: "Title is required" })
     .trim()
     .min(1, "Title cannot be empty"),
+  // Required for electives (checked on create); compulsory courses have no seats
   capacity: z
     .number({ error: "Capacity is required" })
     .int("Capacity must be an integer")
-    .min(0, "Capacity cannot be negative"),
+    .min(0, "Capacity cannot be negative")
+    .optional(),
+  kind: z.enum(COURSE_KINDS, { error: "kind must be elective or compulsory" }).optional(),
+  departments: z.array(z.string().trim().min(1, "A department cannot be empty")).optional(),
   semesterId: z
     .string({ error: "semesterId is required" })
     .trim()
@@ -56,11 +61,21 @@ const courseBase = z.object({
 
 // Defaults apply on CREATE only (zod 4 applies .default() inside .partial(),
 // which would reset these fields on every PATCH).
-export const createCourseSchema = courseBase.extend({
-  electiveGroup: z.string().trim().nullable().optional().default(null),
-  timetableSlots: z.array(timetableSlotSchema).optional().default([]),
-  isActive: z.boolean().optional().default(true),
-});
+export const createCourseSchema = courseBase
+  .extend({
+    kind: z.enum(COURSE_KINDS, { error: "kind must be elective or compulsory" }).optional().default("elective"),
+    departments: z.array(z.string().trim().min(1, "A department cannot be empty")).optional().default([]),
+    electiveGroup: z.string().trim().nullable().optional().default(null),
+    timetableSlots: z.array(timetableSlotSchema).optional().default([]),
+    isActive: z.boolean().optional().default(true),
+  })
+  .superRefine((course, ctx) => {
+    if (course.kind === "elective" && course.capacity === undefined) {
+      ctx.addIssue({ code: "custom", path: ["capacity"], message: "Capacity is required" });
+    }
+    const problem = courseKindProblem(course);
+    if (problem) ctx.addIssue({ code: "custom", path: ["kind"], message: problem });
+  });
 
 export const updateCourseSchema = courseBase
   .partial()
@@ -69,6 +84,7 @@ export const updateCourseSchema = courseBase
 export const courseQuerySchema = z.object({
   semesterId: z.string().trim().optional(),
   electiveGroup: z.string().trim().optional(),
+  kind: z.enum(COURSE_KINDS).optional(),
   search: z.string().trim().max(100, "Search query must be 100 characters or fewer").optional(),
   isActive: z.enum(["true", "false"]).optional(),
   page: z.coerce.number().int().min(1).optional().default(1),

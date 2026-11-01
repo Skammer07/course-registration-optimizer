@@ -296,6 +296,46 @@ describe("POST /runs/:id/verify (replay)", () => {
     expect(res.body.data.allMatch).toBe(true);
   });
 
+  describe("an optimizer held to the baseline", () => {
+    const floored = (cfg = {}, extra = {}) => makeRun({
+      configuration: {
+        maxCoursesPerStudent: 2, meritRatio: 0.7, randomRatio: 0.3, timetableValidationEnabled: true,
+        optimizerFloor: "baseline", cgpaPriority: true, ...cfg,
+      },
+      ...extra,
+    });
+
+    it("is replayed with the floor, the CGPA setting, and the stored seed and split", async () => {
+      runs[RUN_ID] = floored();
+      allocRows = [stored("S1", "C1", 1, null)];
+      mockReplay.mockResolvedValue(replayResult([{ studentId: "S1", courseId: "C1", preferenceRank: 1 }]));
+
+      const res = await verify("?algorithm=optimized");
+      expect(res.status).toBe(200);
+      expect(mockReplay.mock.calls[0][0].options).toMatchObject({
+        optimizerFloor: "baseline", cgpaPriority: true, seed: 42, meritRatio: 0.7, randomRatio: 0.3,
+      });
+    });
+
+    it("cannot be replayed without the seed that produced its baseline", async () => {
+      runs[RUN_ID] = floored({}, { randomSeed: null });
+      const res = await verify("?algorithm=optimized");
+      expect(res.body.data.results[0]).toMatchObject({ algorithm: "optimized", matches: null });
+      expect(res.body.data.results[0].reason).toMatch(/seed/);
+      expect(mockReplay).not.toHaveBeenCalled();
+    });
+
+    it("a run stored before the floor existed is replayed unconstrained, as it was computed", async () => {
+      runs[RUN_ID] = makeRun(); // no optimizerFloor in its configuration
+      allocRows = [stored("S1", "C1", 1, null)];
+      mockReplay.mockResolvedValue(replayResult([{ studentId: "S1", courseId: "C1", preferenceRank: 1 }]));
+
+      await verify("?algorithm=optimized");
+      expect(mockReplay.mock.calls[0][0].options).toMatchObject({ optimizerFloor: "none", cgpaPriority: false });
+      expect(mockReplay.mock.calls[0][0].options.seed).toBeUndefined();
+    });
+  });
+
   it("flags a version change as a possible cause of a mismatch", async () => {
     mockReplay.mockResolvedValue(replayResult([], "9.9.9"));
     const r = (await verify("?algorithm=optimized")).body.data.results[0];

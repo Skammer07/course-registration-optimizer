@@ -179,20 +179,28 @@ describe("executeSingleAllocation - each algorithm runs independently", () => {
     expect(run.optimizedMetrics ?? null).toBeNull();
     expect(run.baselineValidation.valid).toBe(true);
     expect(run.randomSeed).toBe(11);
-    expect(run.configuration.meritRatio).toBe(0.75);
+    expect(run.configuration.meritRatio).toBe(0.7);
+    expect(run.configuration.oneCoursePerGroup).toBe(true);
     expect(run.inputFingerprint).toMatch(/^[a-f0-9]{64}$/);
     expect(run.inputSnapshot.students).toHaveLength(3);
   });
 
-  it("optimized-only run stores only optimized assignments; ratios and seed are null", async () => {
-    const run = await executeSingleAllocation({ ...base, algorithm: "optimized" });
+  it("optimized-only run stores only optimized assignments, held to a baseline (split and seed are stored)", async () => {
+    const run = await executeSingleAllocation({ ...base, algorithm: "optimized", seed: 7 });
     expect(run.status).toBe("completed");
     expect(run.algorithmsRun).toEqual(["optimized"]);
     expect(algsIn(run._id)).toEqual(["optimized"]);
     expect(run.optimizedMetrics.totalAssignments).toBeGreaterThan(0);
     expect(run.baselineMetrics ?? null).toBeNull();
-    expect(run.configuration.meritRatio).toBeNull();
-    expect(run.configuration.randomRatio).toBeNull();
+    // the floor is the baseline's own result, so the run keeps the split and seed that produced it
+    expect(run.configuration).toMatchObject({ optimizerFloor: "baseline", cgpaPriority: true, meritRatio: 0.7, randomRatio: 0.3 });
+    expect(run.randomSeed).toBe(7);
+  });
+
+  it("without the floor an optimizer-only run has no split or seed", async () => {
+    const run = await executeSingleAllocation({ ...base, algorithm: "optimized", optimizerFloor: "none", cgpaPriority: false });
+    expect(run.status).toBe("completed");
+    expect(run.configuration).toMatchObject({ optimizerFloor: "none", cgpaPriority: false, meritRatio: null, randomRatio: null });
     expect(run.randomSeed).toBeNull();
   });
 

@@ -22,7 +22,7 @@ import Preference from "../models/Preference.js";
  */
 export async function getCourseDemand(semesterId) {
   const [courses, perCourse, lists, students] = await Promise.all([
-    Course.find({ semesterId }).select("courseCode").lean(),
+    Course.find({ semesterId, kind: { $ne: "compulsory" } }).select("courseCode").lean(),
     Preference.aggregate([
       { $match: { semesterId, status: "submitted" } },
       { $unwind: { path: "$rankedCourseIds", includeArrayIndex: "position" } },
@@ -127,7 +127,13 @@ export async function getPreferenceOverview({
     ]),
   ]);
 
-  const groups = [...new Set(courses.map((c) => c.electiveGroup).filter(Boolean))].sort();
+  // Courses with no group are open to every group, so the groups also come from the students.
+  const groups = [
+    ...new Set([
+      ...courses.map((c) => c.electiveGroup),
+      ...students.flatMap((s) => s.electiveGroups ?? []),
+    ].filter(Boolean)),
+  ].sort();
 
   const listsByStudent = new Map();
   for (const l of lists) {

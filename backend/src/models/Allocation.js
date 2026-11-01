@@ -63,6 +63,12 @@ const allocationSchema = new mongoose.Schema(
       type: Number,
       default: null,
     },
+    // The elective group (OE1, OE2, ...) whose priority list this course was given for.
+    // null for runs that did not use elective groups.
+    electiveGroup: {
+      type: String,
+      default: null,
+    },
     status: {
       type: String,
       enum: { values: ["proposed", "published"], message: "Invalid status" },

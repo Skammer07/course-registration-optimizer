@@ -79,7 +79,7 @@ vi.mock("../../src/models/Course.js", () => ({
   default: {
     find: vi.fn().mockReturnValue({ lean: mockCourseFindLean }),
     findById: vi.fn(),
-    countDocuments: vi.fn().mockResolvedValue(0),
+    countDocuments: vi.fn().mockResolvedValue(2), // a pool of two electives, as long as the lists these tests submit
   },
 }));
 
@@ -272,9 +272,9 @@ describe("PUT /api/v1/preferences/me - ownership and eligibility", () => {
     expect((await put()).status).toBe(400);
   });
 
-  it("rejects non-elective (null group) courses", async () => {
+  it("a course with no group is an open elective and can be ranked in any group", async () => {
     mockCourseFindLean.mockResolvedValue([course(COURSE_1), course(COURSE_2, { electiveGroup: null })]);
-    expect((await put()).status).toBe(400);
+    expect((await put()).status).toBe(200);
   });
 
   it("rejects inactive courses", async () => {

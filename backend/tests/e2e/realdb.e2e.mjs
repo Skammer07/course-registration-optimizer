@@ -465,7 +465,8 @@ try {
   const courseCsv = ["courseCode,title,capacity,semesterId,electiveGroup,timetable"].concat(courseRows).join("\n");
   const prefRows = [];
   for (let i = 0; i < N; i++) {
-    for (const g of ["A", "B"]) for (let r = 1; r <= 3; r++) prefRows.push(`IMP${pad3(i + 1)},${IMP},${g},IMP${g}${((i + r - 1) % 4) + 1},${r}`);
+    // a submitted list must hold every course its group can choose from (4 here)
+    for (const g of ["A", "B"]) for (let r = 1; r <= 4; r++) prefRows.push(`IMP${pad3(i + 1)},${IMP},${g},IMP${g}${((i + r - 1) % 4) + 1},${r}`);
   }
   const prefCsv = ["studentId,semesterId,electiveGroup,courseCode,rank"].concat(prefRows).join("\n");
 
@@ -506,7 +507,7 @@ try {
     `${pr.body?.data?.lists} lists`);
   const firstList = await Preference.findOne({ semesterId: IMP, electiveGroup: "A" }).populate("rankedCourseIds", "courseCode").lean();
   check("preference import: lists are stored in rank order and submitted",
-    firstList.status === "submitted" && firstList.rankedCourseIds.length === 3 && !!firstList.submittedAt);
+    firstList.status === "submitted" && firstList.rankedCourseIds.length === 4 && !!firstList.submittedAt);
 
   const impBase = await admin.post("/api/v1/allocations/run").send({ semesterId: IMP, algorithm: "baseline", seed: 11, includeTimetable: true });
   const impOpt = await admin.post("/api/v1/allocations/run").send({ semesterId: IMP, algorithm: "optimized", includeTimetable: false });
@@ -537,8 +538,8 @@ try {
   // ---- demand per course, preference overview, per-student lists (data screens) ---------------
   const dem = (await admin.get(`/api/v1/semesters/${IMP}/demand`)).body?.data;
   const sumOf = (rows, key) => rows.reduce((n, r) => n + r[key], 0);
-  check("demand: counts every ranked entry of the imported lists (40 students x 2 groups x 3 courses)",
-    dem?.lists === 2 * N && dem.studentsWithLists === N && dem.courses.length === 8 && sumOf(dem.courses, "ranked") === 6 * N,
+  check("demand: counts every ranked entry of the imported lists (40 students x 2 groups x 4 courses)",
+    dem?.lists === 2 * N && dem.studentsWithLists === N && dem.courses.length === 8 && sumOf(dem.courses, "ranked") === 8 * N,
     `lists=${dem?.lists} students=${dem?.studentsWithLists} ranked=${dem && sumOf(dem.courses, "ranked")}`);
   check("demand: every list has exactly one first and one second choice",
     sumOf(dem.courses, "firstChoice") === 2 * N && sumOf(dem.courses, "secondChoice") === 2 * N);
@@ -574,7 +575,7 @@ try {
   const imp1 = await Student.findOne({ studentId: "IMP001" }).lean();
   const mine = (await admin.get(`/api/v1/preferences?student=${imp1._id}&semesterId=${IMP}`)).body?.data;
   check("a student's own lists can be fetched, in rank order with course titles",
-    mine?.preferences?.length === 2 && mine.preferences.every((p) => p.rankedCourseIds.length === 3 && p.rankedCourseIds[0].courseCode && p.rankedCourseIds[0].title),
+    mine?.preferences?.length === 2 && mine.preferences.every((p) => p.rankedCourseIds.length === 4 && p.rankedCourseIds[0].courseCode && p.rankedCourseIds[0].title),
     `${mine?.preferences?.length} lists`);
   check("these data screens are closed to students",
     (await impStuOverview()).status === 403 && (await student.get(`/api/v1/semesters/${IMP}/demand`)).status === 403 &&
@@ -642,7 +643,12 @@ try {
     await pending;
     skip("cancel a long-running run", `the run finished in ${Date.now() - startedAt} ms, before it could be cancelled`);
   } else {
-    const healthBusy = (await request(app).get("/health")).body;
+    // the run record exists a moment before its worker thread starts, so wait for it
+    let healthBusy = (await request(app).get("/health")).body;
+    for (let i = 0; i < 30 && healthBusy.activeRuns !== 1; i++) {
+      await new Promise((r) => setTimeout(r, 100));
+      healthBusy = (await request(app).get("/health")).body;
+    }
     check("health: shows the run that is computing right now (activeRuns = 1)", healthBusy.activeRuns === 1, `activeRuns=${healthBusy.activeRuns}`);
     check("a large timetable run records the size advisory on the run",
       (runningDoc.inputWarnings?.messages ?? []).some((m) => /200 students.*timetable search can be/.test(m)));

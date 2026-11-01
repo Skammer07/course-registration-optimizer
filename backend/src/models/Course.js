@@ -6,6 +6,7 @@
 
 import mongoose from "mongoose";
 import { WEEKDAYS, isValidTime, isValidSlot } from "../utils/timetable.js";
+import { COURSE_KINDS, cleanDepartments, courseKindProblem } from "../utils/courseKind.js";
 
 const timetableSlotSchema = new mongoose.Schema(
   {
@@ -50,9 +51,41 @@ const courseSchema = new mongoose.Schema(
       required: [true, "Title is required"],
       trim: true,
     },
+    // Elective or compulsory. Compulsory courses are never allocated; their
+    // slots block overlapping electives for the listed departments' students.
+    kind: {
+      type: String,
+      enum: { values: COURSE_KINDS, message: "kind must be elective or compulsory" },
+      default: "elective",
+      // Cross-field rule (departments, elective group). Runs on save and in
+      // validateSync; an update query has no document, so it is skipped there.
+      validate: {
+        validator: function () {
+          if (typeof this.get !== "function") return true;
+          const problem = courseKindProblem(this);
+          if (problem) throw new Error(problem);
+          return true;
+        },
+      },
+    },
+    // Departments whose students take this course (used for compulsory courses)
+    departments: {
+      type: [String],
+      default: [],
+      set: cleanDepartments,
+    },
     capacity: {
       type: Number,
-      required: [true, "Capacity is required"],
+      // Seats only matter for electives
+      required: [
+        function () {
+          return this.kind !== "compulsory";
+        },
+        "Capacity is required",
+      ],
+      default: function () {
+        return this.kind === "compulsory" ? 0 : undefined;
+      },
       min: [0, "Capacity cannot be negative"],
       validate: {
         validator: Number.isInteger,
@@ -92,6 +125,7 @@ const courseSchema = new mongoose.Schema(
 // Unique per course code within a semester
 courseSchema.index({ courseCode: 1, semesterId: 1 }, { unique: true });
 courseSchema.index({ semesterId: 1, electiveGroup: 1 });
+courseSchema.index({ semesterId: 1, kind: 1 });
 
 export default mongoose.model("Course", courseSchema);
 

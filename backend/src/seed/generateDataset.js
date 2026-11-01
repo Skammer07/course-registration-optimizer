@@ -13,6 +13,11 @@
  *   many-ties     only four distinct CGPA values: exercises tie handling
  *   many-clashes  every course draws from only four time slots: timetable stress
  *
+ * A separate scenario, "open-electives", matches the college's open-elective slots:
+ * one shared pool of courses (no group of their own), and for every student two
+ * independent priority lists of 15 choices, one for OE1 and one for OE2, drawn from
+ * that pool (so the same course can be in both lists).
+ *
  * Mock data only: groups, sizes and capacities are assumptions for testing
  * the algorithms, not institutional rules.
  */
@@ -20,6 +25,8 @@
 import { createSeededRandom } from "../../../algorithm/src/utils/seededRandom.js";
 
 export const SCENARIOS = ["balanced", "scarce-seats", "many-ties", "many-clashes"];
+export const OPEN_ELECTIVES = "open-electives";
+export const OPEN_GROUPS = ["OE1", "OE2"];
 export const SIZES = { small: 30, medium: 200, large: 1000 };
 export const GROUPS = ["A", "B"];
 
@@ -52,9 +59,10 @@ export function generateDataset({
   size = SIZES.small,
   semesterId = "SEM-SEED",
   seed = 1,
+  courseCount, // open-electives only: how many courses the shared pool has (default about size / 8)
 } = {}) {
-  if (!SCENARIOS.includes(scenario)) {
-    throw new Error(`Unknown scenario "${scenario}". Use one of: ${SCENARIOS.join(", ")}.`);
+  if (![...SCENARIOS, OPEN_ELECTIVES].includes(scenario)) {
+    throw new Error(`Unknown scenario "${scenario}". Use one of: ${[...SCENARIOS, OPEN_ELECTIVES].join(", ")}.`);
   }
   if (!Number.isInteger(size) || size < 4 || size > 5000) {
     throw new Error("size must be an integer between 4 and 5000.");
@@ -65,6 +73,13 @@ export function generateDataset({
 
   const random = createSeededRandom(seed);
   const intIn = (lo, hi) => lo + Math.floor(random() * (hi - lo + 1));
+
+  if (scenario === OPEN_ELECTIVES) {
+    if (courseCount !== undefined && (!Number.isInteger(courseCount) || courseCount < 1 || courseCount > 200)) {
+      throw new Error("courseCount must be an integer between 1 and 200.");
+    }
+    return generateOpenElectives({ size, semesterId, seed, random, intIn, courseCount });
+  }
 
   // ---- Courses: coursesPerGroup grows slowly with the class size ----------
   const coursesPerGroup = Math.min(10, Math.max(3, Math.ceil(size / 25) + 2));
@@ -135,6 +150,73 @@ export function generateDataset({
 
   return {
     meta: { scenario, size, semesterId, seed, coursesPerGroup },
+    students,
+    courses,
+    preferences,
+  };
+}
+
+/**
+ * One shared pool of open electives and two independent 15-choice lists per student
+ * (OE1 and OE2). Seats total about 1.2x the 2 x size slots to fill.
+ */
+function generateOpenElectives({ size, semesterId, seed, random, intIn, courseCount }) {
+  const poolSize = courseCount ?? Math.min(40, Math.max(16, Math.round(size / 8)));
+  const pool = slotPool("balanced");
+  const perCourse = Math.max(1, Math.round((size * OPEN_GROUPS.length * 1.2) / poolSize));
+
+  const courses = [];
+  for (let i = 1; i <= poolSize; i++) {
+    const slots = [];
+    const wanted = random() < 0.5 ? 1 : 2;
+    while (slots.length < wanted) {
+      const s = pool[intIn(0, pool.length - 1)];
+      if (!slots.some((x) => x.day === s.day && x.start === s.start)) slots.push({ ...s });
+      if (slots.length >= pool.length) break;
+    }
+    courses.push({
+      courseCode: `SD-P${pad(i, 2)}`,
+      title: `Open Elective ${pad(i, 2)}`,
+      capacity: Math.max(1, Math.round(perCourse * (0.75 + random() * 0.5))),
+      semesterId,
+      electiveGroup: null, // open to every group
+      timetableSlots: slots,
+      isActive: true,
+    });
+  }
+
+  const students = [];
+  for (let i = 1; i <= size; i++) {
+    students.push({
+      studentId: `SEED${pad(i, 4)}`,
+      name: `Seed Student ${pad(i, 4)}`,
+      cgpa: Math.round((5 + random() * 4.9) * 100) / 100,
+      department: DEPARTMENTS[(i - 1) % DEPARTMENTS.length],
+      semesterId,
+      electiveGroups: [...OPEN_GROUPS],
+      isActive: true,
+    });
+  }
+
+  // some courses are much more popular than others; each list is drawn on its own
+  const weights = courses.map((_, i) => 1 / (1 + i * 0.15));
+  const listLength = Math.min(15, poolSize);
+  const preferences = [];
+  for (const s of students) {
+    for (const group of OPEN_GROUPS) {
+      const ordered = weightedOrder(courses, weights, random).slice(0, listLength);
+      preferences.push({
+        studentId: s.studentId,
+        semesterId,
+        electiveGroup: group,
+        courseCodes: ordered.map((c) => c.courseCode),
+        status: "submitted",
+      });
+    }
+  }
+
+  return {
+    meta: { scenario: OPEN_ELECTIVES, size, semesterId, seed, poolSize },
     students,
     courses,
     preferences,

@@ -7,6 +7,8 @@
  */
 
 import Course from "../models/Course.js";
+import { courseKindProblem, compulsoryCoursesForDepartment } from "../utils/courseKind.js";
+import Student from "../models/Student.js";
 import { ApiError } from "../utils/ApiError.js";
 
 /** Escape a string so it is safe to embed in a RegExp literal. */
@@ -22,6 +24,8 @@ const UPDATABLE_COURSE_FIELDS = new Set([
   "title",
   "capacity",
   "electiveGroup",
+  "kind",
+  "departments",
   "timetableSlots",
   "isActive",
 ]);
@@ -36,10 +40,13 @@ function sanitizeCourseUpdate(data) {
   return safe;
 }
 
-export async function listCourses({ semesterId, electiveGroup, search, isActive, page, limit }) {
+export async function listCourses({ semesterId, electiveGroup, kind, search, isActive, page, limit }) {
   const filter = {};
   if (semesterId) filter.semesterId = semesterId;
   if (electiveGroup) filter.electiveGroup = electiveGroup;
+  // Courses saved before kinds existed have no kind and are electives
+  if (kind === "compulsory") filter.kind = "compulsory";
+  else if (kind === "elective") filter.kind = { $ne: "compulsory" };
   if (search) {
     const safeSearch = escapeRegex(search);
     filter.$or = [
@@ -76,6 +83,16 @@ export async function updateCourse(id, data) {
   if (Object.keys(safeData).length === 0) {
     throw ApiError.badRequest("No updatable fields provided.");
   }
+  // Update validators cannot compare fields with each other, so check the
+  // result of the change here.
+  const existing = await Course.findById(id).lean();
+  if (!existing) throw ApiError.notFound("Course");
+  const problem = courseKindProblem({ ...existing, ...safeData });
+  if (problem) throw ApiError.badRequest(problem);
+  if ((safeData.kind ?? existing.kind) !== "compulsory" && existing.capacity === undefined && safeData.capacity === undefined) {
+    throw ApiError.badRequest("Capacity is required for an elective course.");
+  }
+
   const course = await Course.findByIdAndUpdate(
     id,
     { $set: safeData },
@@ -99,3 +116,36 @@ export async function deactivateCourse(id) {
   return course;
 }
 
+
+/**
+ * The signed-in student's own compulsory courses for their semester, with
+ * their weekly times. Identity comes only from the session, never from input.
+ */
+export async function listMyCompulsoryCourses(studentObjectId) {
+  const student = studentObjectId
+    ? await Student.findById(studentObjectId).select("studentId department semesterId").lean()
+    : null;
+  if (!student) {
+    throw ApiError.badRequest("Your user account is not linked to a student record.");
+  }
+
+  const base = { semesterId: student.semesterId || null, department: student.department || null };
+  if (!student.semesterId) return { ...base, courses: [] };
+
+  const compulsory = await Course.find({
+    semesterId: student.semesterId,
+    kind: "compulsory",
+    isActive: true,
+  })
+    .sort({ courseCode: 1 })
+    .lean();
+
+  return {
+    ...base,
+    courses: compulsoryCoursesForDepartment(compulsory, student.department).map((c) => ({
+      courseCode: c.courseCode,
+      title: c.title,
+      timetableSlots: (c.timetableSlots ?? []).map((s) => ({ day: s.day, start: s.start, end: s.end })),
+    })),
+  };
+}

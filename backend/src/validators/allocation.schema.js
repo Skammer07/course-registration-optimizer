@@ -30,15 +30,20 @@ export const compareAllocationSchema = z
       .min(0, "meritRatio must be >= 0")
       .max(1, "meritRatio must be <= 1")
       .optional()
-      .default(0.75),
+      .default(0.7),
     randomRatio: z
       .number()
       .finite("randomRatio must be a finite number")
       .min(0, "randomRatio must be >= 0")
       .max(1, "randomRatio must be <= 1")
       .optional()
-      .default(0.25),
+      .default(0.3),
     includeTimetable: z.boolean().optional().default(true),
+    // "baseline": the optimizer may not leave any student worse off than the baseline's own result
+    // (recommended); "none": the unconstrained optimizer
+    optimizerFloor: z.enum(["baseline", "none"]).optional().default("baseline"),
+    // the optimizer uses CGPA itself: higher CGPA gets the better choices among equal results
+    cgpaPriority: z.boolean().optional().default(true),
     // Optional seed for the baseline lottery; omitted -> a seed is generated
     // and stored on the run so the baseline can be reproduced.
     seed: z.number().int().min(0).max(4294967295).optional(),
@@ -73,20 +78,24 @@ export const runSingleAllocationSchema = z
     meritRatio: z.number().finite().min(0).max(1).optional(),
     randomRatio: z.number().finite().min(0).max(1).optional(),
     includeTimetable: z.boolean().optional().default(true),
+    optimizerFloor: z.enum(["baseline", "none"]).optional().default("baseline"),
+    cgpaPriority: z.boolean().optional().default(true),
     seed: z.number().int().min(0).max(4294967295).optional(),
   })
   .superRefine((d, ctx) => {
     const hasBaselineOnly =
       d.meritRatio !== undefined || d.randomRatio !== undefined || d.seed !== undefined;
-    if (d.algorithm === "optimized" && hasBaselineOnly) {
+    // the optimizer is held to the baseline's result by default, so it uses the same split and seed;
+    // without that floor it has no use for them
+    if (d.algorithm === "optimized" && d.optimizerFloor === "none" && hasBaselineOnly) {
       ctx.addIssue({
         code: "custom",
-        message: "meritRatio, randomRatio and seed apply to the baseline only",
+        message: "meritRatio, randomRatio and seed apply to the baseline, or to the optimizer only when optimizerFloor is \"baseline\"",
         path: ["algorithm"],
       });
     }
-    if (d.algorithm === "baseline") {
-      const m = d.meritRatio ?? 0.75;
+    if (d.algorithm === "baseline" || (d.algorithm === "optimized" && d.optimizerFloor === "baseline")) {
+      const m = d.meritRatio ?? 0.7;
       const r = d.randomRatio ?? 1 - m;
       if (Math.abs(m + r - 1) > 1e-9) {
         ctx.addIssue({

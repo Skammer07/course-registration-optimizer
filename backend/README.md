@@ -133,8 +133,9 @@ All endpoints return a consistent JSON envelope:
 | Method | Path                   | Auth               | Description          |
 |--------|------------------------|--------------------|----------------------|
 | GET    | `/api/v1/courses`      | 🔒 any             | List with pagination |
+| GET    | `/api/v1/courses/my-compulsory` | 🔒 student | The student's own compulsory courses (matched by department) with their weekly times |
 | GET    | `/api/v1/courses/:id`  | 🔒 any             | Get by MongoDB ID    |
-| POST   | `/api/v1/courses`      | 🔒 admin/faculty   | Create course        |
+| POST   | `/api/v1/courses`      | 🔒 admin/faculty   | Create course (`kind`: `elective` or `compulsory`; a compulsory course needs `departments` and has no seats or elective group) |
 | PATCH  | `/api/v1/courses/:id`  | 🔒 admin/faculty   | Update course        |
 | DELETE | `/api/v1/courses/:id`  | 🔒 admin           | Deactivate (soft)    |
 
@@ -201,7 +202,7 @@ All endpoints return a consistent JSON envelope:
 >
 > **Running one algorithm independently:** `POST /allocations/run` with `{ "semesterId": "...", "algorithm": "baseline" | "optimized", "maxCoursesPerStudent": 2, "includeTimetable": true }`. `meritRatio`, `randomRatio` and `seed` are accepted for `baseline` only (ratios must sum to 1) and rejected for `optimized`. The run stores only that algorithm's assignments, metrics, validation and runtime (`algorithmsRun: ["baseline"]`), plus an `inputFingerprint` (SHA-256 of the normalized input). It is validated, persisted and publishable exactly like a combined run; publishing an algorithm the run does not contain returns `400`.
 >
-> **Comparing runs manually:** `GET /allocations/runs/compare?runA=<id>&runB=<id>[&algorithmA=...&algorithmB=...]`. A single-algorithm run is resolved automatically; a run that holds both needs `algorithmA`/`algorithmB`. The response gives each side's metrics, configuration, seed, runtime and validation, the difference (B minus A) for each metric, `sameInput`, and `warnings` when the runs used different input data, semesters, `maxCoursesPerStudent` or timetable settings. No winner is declared: the baseline keeps merit/random quotas while the optimizer ignores quotas and CGPA. `GET /runs?algorithm=` filters runs by contained algorithm. Runs created before this feature are treated as containing both algorithms.
+> **Comparing runs manually:** `GET /allocations/runs/compare?runA=<id>&runB=<id>[&algorithmA=...&algorithmB=...]`. A single-algorithm run is resolved automatically; a run that holds both needs `algorithmA`/`algorithmB`. The response gives each side's metrics, configuration, seed, runtime and validation, the difference (B minus A) for each metric, `sameInput`, and `warnings` when the runs used different input data, semesters, `maxCoursesPerStudent` or timetable settings. No winner is declared: the baseline keeps merit/random quotas while the optimizer maximizes assignments (by default held to the baseline's result, with CGPA deciding ties). `GET /runs?algorithm=` filters runs by contained algorithm. Runs created before this feature are treated as containing both algorithms.
 >
 > `POST /compare` also accepts an optional integer `seed` (0-4294967295) for the baseline lottery; when omitted a seed is generated. The seed, `algorithmVersion` and full normalized snapshot are stored on the run.
 
@@ -237,7 +238,7 @@ Set `SEED_ADMIN_EMAIL` and `SEED_ADMIN_PASSWORD` in `.env`. The server seeds thi
 | `users`         | Authentication records (email, hash, role, must-change-password flag) |
 | `semesters`     | Per-semester preference window (open/close dates, manual override) |
 | `students`      | Student profiles (studentId, name, cgpa, semesterId) |
-| `courses`       | Course records (courseCode, capacity, timetable)     |
+| `courses`       | Course records (courseCode, kind, departments, capacity, timetable) |
 | `preferences`   | Ranked preference lists per student/semester/group   |
 | `allocationruns`| Run metadata, configuration, metrics, audit trail    |
 | `allocations`   | Per-assignment records linked to a run               |
@@ -256,11 +257,14 @@ import { runAllocationComparison } from '../algorithm/src/services/allocationCom
 **Normalization pipeline** (`src/services/allocationEngine.service.js`):
 
 ```
-Mongoose Docs → normalizeStudents → { id, name, cgpa }
-Mongoose Docs → normalizeCourses  → { id, name, capacity }
-Preference Docs → normalizePreferences → { studentId, courseId, rank }
-Course Docs → buildTimetableMap  → { [courseCode]: [{ day, start, end }] }
+Student docs → normalizeStudents → { id, name, cgpa }
+Elective course docs → normalizeCourses → { id, name, capacity, electiveGroup }
+Preference docs → normalizePreferences → { studentId, courseId, rank, electiveGroup }
+Elective course docs → buildTimetableMap → { [courseCode]: [{ day, start, end }] }
+Compulsory course docs + student department → buildFixedTimetable → { [studentId]: [{ day, start, end }] }
 ```
+
+Compulsory courses (`kind: "compulsory"`) are never allocated: they are taken out of the elective list and only supply each student's fixed slots. Each run also passes default search limits to the optimizer (`OPTIMIZER_MAX_WORK`, `OPTIMIZER_MAX_FLOW_SOLVES` and `OPTIMIZER_SEARCH_TIME_LIMIT_MS`, constants in `allocationEngine.service.js`).
 
 The algorithm is invoked **outside** any MongoDB transaction so long-running computation does not hold a DB lock.
 
@@ -270,15 +274,16 @@ The algorithm is invoked **outside** any MongoDB transaction so long-running com
 
 > **Important:** The official IIT (ISM) Dhanbad allocation rules have not been confirmed. The following documents the current algorithm's actual behavior:
 
-- The **baseline** uses a merit phase (top 75% of capacity) followed by a random phase (25%).
+- The **baseline** uses a merit phase (70% of each course's seats by CGPA) followed by a lottery (the other 30%), the split in the IIT (ISM) UG manual. The merit share is the rounded seat count and the lottery gets the rest, so no seat is lost to rounding. With elective groups the merit phase runs one round per group in CGPA order, and the lottery draws per group, giving each student their best-ranked course that still has a lottery seat.
 - The **optimized** algorithm uses Min-Cost Max-Flow to maximize the number of assignments and then minimize preference-rank cost.
-- Neither algorithm enforces **strict CGPA priority** (i.e., a lower-CGPA student could receive a course over a higher-CGPA student if it improves global assignment count).
-- Elective-group quotas are not enforced per group — all preferences across groups are pooled.
+- **CGPA in the optimizer:** by default (`optimizerFloor: "baseline"`) the optimizer is held to the baseline's own result, so **no student ends worse than under the baseline in any group**, including high-CGPA students, and with `cgpaPriority` it gives higher CGPA the better choices among equal results. The CGPA is the cumulative CGPA up to the previous semester, as at pre-registration. Strict CGPA order everywhere is not guaranteed (the baseline's 30% lottery is part of the college method); `cgpaPriorityViolations` measures the remainder. The unconstrained optimizer (`optimizerFloor: "none"`) ignores CGPA.
+- **One course per elective group:** each elective group (OE1, OE2, ...) is an independent priority list of at most 15 courses, and a course with no group of its own is **open** to every group, so both lists can draw from one shared pool (and can even be identical). A student receives at most one course from each group and never the same course twice (`oneCoursePerGroup`, on by default and stored in the run configuration; each assignment records the group it was given for). Both algorithms try to fill every group a student ranked; a group stays empty only when no seat or clash-free slot is left. Per-group seat quotas are not modelled.
+- **Compulsory courses** are fixed timetable slots (see above): no elective that overlaps one is given to that student, by either algorithm.
 - Published results must have zero constraint violations.
 - **`meritRatio + randomRatio` must equal exactly 1.0** (within floating-point tolerance ±1×10⁻⁹). The `POST /compare` endpoint returns `400` if they do not sum to 1.
 - **Student eligibility for elective groups:** If a student's `electiveGroups` array is empty, preferences for any group are accepted (assumption — official rule not documented in `docs/allocation-rules.md`).
 - **Input snapshot:** Each `AllocationRun` stores a full normalized snapshot of students, courses, preferences, and timetable data used during the run. This enables reproducible auditing independent of subsequent data changes.
-- `meritRatio: 0` (all seats by lottery) and `randomRatio: 0` (all seats by merit) are valid. Both must be finite, in `[0, 1]`, and sum to 1; this is enforced by the API (Zod) and again by the algorithm. Each phase's per-course quota is `floor(capacity * ratio)`, so a seat can be lost to rounding for ratios like 0.75/0.25 on small capacities (existing behavior, unchanged).
+- `meritRatio: 0` (all seats by lottery) and `randomRatio: 0` (all seats by merit) are valid. Both must be finite, in `[0, 1]`, and sum to 1; this is enforced by the API (Zod) and again by the algorithm. Per course, the merit quota is `round(capacity * meritRatio)` and the lottery quota is the remainder, so the two always add up to the capacity.
 - See `docs/allocation-rules.md` for open questions that must be answered before institutional deployment.
 
 ---
@@ -294,15 +299,17 @@ The algorithm is invoked **outside** any MongoDB transaction so long-running com
 4. Repeating the same algorithm on a published run returns `200` without writes (idempotent). A different algorithm returns `409`; create a new run instead.
 5. **Crash recovery:** a process crash between steps 2 and 3 leaves the run in `publishing`. Publishes get `409` while the claim is younger than 5 minutes; after that the next publish request rolls the stale claim back (one winner, conditional update) and proceeds.
 
-**Not enforced because no institutional rule is documented** (`docs/allocation-rules.md` is unfilled): compulsory/required courses, required electives per group, per-group quotas, maximum preferences per group, prerequisites, reserved seats, strict CGPA priority, eligibility by department/programme/academic year. An empty (zero-assignment) result is rejected since a valid zero-allocation publication is not defined.
+**Not enforced** (the rule is unconfirmed or not built yet; see `docs/allocation-rules.md`): a guaranteed minimum of one course per group, per-group quotas, the 15-preference limit, prerequisites, reserved seats, CGPA priority in the optimizer, eligibility of electives by department/programme/academic year, a second allocation round, the 10-student minimum, courses with similar content, half-semester courses. An empty (zero-assignment) result is rejected since a valid zero-allocation publication is not defined.
 
-**Preference submission** derives identity only from the authenticated account and checks: active student, the student's own `semesterId` equals the requested semester (fails closed if unset), elective-group membership (existing rule: an empty `electiveGroups` list allows any group), every course exists, is active, is in the requested semester **and** group, no duplicate courses. Rank is the array position, so ranks are contiguous by construction.
+**Priority lists:** each group's list has at most 15 courses (best first). A *submitted* list must be full, 15 courses or every course the group can choose from when fewer exist; a draft may be shorter. The pool of a group is the open electives plus that group's own courses; compulsory courses cannot be ranked. CSV preference imports follow the same rules.
 
-**Elective groups:** `electiveGroup` is carried on every normalized course and preference record and stored in the snapshot; publication checks that each assignment's course group matches the group it was selected under. The optimizers themselves are still group-agnostic (see limitations).
+**Preference submission** derives identity only from the authenticated account and checks: active student, the student's own `semesterId` equals the requested semester (fails closed if unset), elective-group membership (existing rule: an empty `electiveGroups` list allows any group), every course exists, is active, is in the requested semester, and is open or in the requested group, no duplicate courses, and the list length above. Rank is the array position, so ranks are contiguous by construction.
+
+**Elective groups:** `electiveGroup` is carried on every normalized course and preference record and stored in the snapshot; publication checks that each assignment's course group matches the group it was selected under. Both algorithms enforce at most one course per group, and `publicationCheck` re-validates that rule for runs that used it.
 
 **Timetable rules** (weekday, `HH:MM` with hour 00-23 / minute 00-59, start strictly before end) live in `src/utils/timetable.js` and are enforced by both the Zod schemas and the `Course` model (create and `runValidators` updates). A dotted-path update of a single slot field cannot check start < end at the model level; the course update API only replaces the whole `timetableSlots` array.
 
-**Reproducibility:** the stored snapshot (students, courses, preferences, timetable, configuration), `algorithmVersion` and `randomSeed` allow the baseline to be re-run identically with the same algorithm code (`mulberry32` PRNG, fully determined by the seed). The optimized (MCMF) result is deterministic. Limits: reproduction requires the same `algorithmVersion` code; no replay endpoint exists yet (re-run `runAllocationComparison` with the snapshot and `seed`); snapshots contain student CGPAs and are only returned by the admin/faculty `GET /runs/:runId` (list responses omit them).
+**Reproducibility:** the stored snapshot (students, elective courses, preferences, timetable, each student's compulsory slots, configuration), `algorithmVersion` and `randomSeed` allow a run to be replayed with `POST /allocations/runs/:runId/verify`. The baseline is fully determined by the seed (`mulberry32` PRNG) and the optimizer is deterministic; its search limit counts solves, so the same input stops at the same point. Limits: replay needs the same `algorithmVersion` code; a run stopped by the 20-second time limit (rare) may not replay identically; runs stored before the group rule (version 1.3.0) replay without it; snapshots contain student CGPAs and are only returned by the admin/faculty `GET /runs/:runId` (list responses omit them).
 
 ---
 
@@ -326,7 +333,7 @@ npm run seed -- --scenario balanced --size small --semester SEM-SEED --seed 1 --
 
 | Option | Values | Meaning |
 |---|---|---|
-| `--scenario` | `balanced`, `scarce-seats`, `many-ties`, `many-clashes` | seats about 1.2x / 0.6x students per group; only four distinct CGPAs; twelve shared time slots |
+| `--scenario` | `balanced`, `scarce-seats`, `many-ties`, `many-clashes`, `open-electives` | seats about 1.2x / 0.6x students per group; only four distinct CGPAs; twelve shared time slots; **open-electives**: one shared pool of courses (about size/8, no group) and two independent lists of 15 choices (OE1, OE2) per student |
 | `--size` | `small` (30), `medium` (200), `large` (1000) or an integer | number of students |
 | `--semester` | any id (default `SEM-SEED`) | semester the data is created under |
 | `--seed` | integer | regenerates identical data |
@@ -335,7 +342,7 @@ npm run seed -- --scenario balanced --size small --semester SEM-SEED --seed 1 --
 
 > **One seeded dataset per database.** Seeded student ids (`SEED0001`...) are unique across the whole database, so seeding a second semester into a database that already holds seeded data fails with a message naming the existing semester. Refresh that one with `--semester <that semester> --reset --users`, or use an empty database (set a database name in `MONGODB_URI`).
 
-Generated data: two elective groups (A, B), 3-10 courses per group, each student ranks up to 15 courses per group (skewed so some courses are popular), every list `submitted`. Then run `POST /allocations/run` once per algorithm and `GET /allocations/runs/compare`. Group sizes, capacities and clash rates are **test assumptions, not institutional rules**.
+Generated data (except `open-electives`, described above): two elective groups (A, B), 3-10 courses per group, each student ranks up to 15 courses per group (skewed so some courses are popular), every list `submitted`. Then run `POST /allocations/run` once per algorithm and `GET /allocations/runs/compare`. The generator makes electives only; compulsory courses (`kind: "compulsory"` with `departments` and timetable slots) must be added separately, for example through the CSV import. Group sizes, capacities and clash rates are **test assumptions, not institutional rules**.
 
 ### Runtime protections and tracing
 
@@ -349,7 +356,7 @@ Generated data: two elective groups (A, B), 3-10 courses per group, each student
 
 - **Stale data no longer crashes a run.** Preferences are loaded for the whole semester, but only active students and active courses take part. Preference lists of inactive students are skipped, withdrawn courses are dropped (the remaining courses keep their order), and everything excluded is recorded on the run as `inputWarnings`. A partly filled-in timetable (some active courses without slots) is rejected with `400` before a run is created; disable it with `includeTimetable: false`.
 - **Runs execute in a worker thread with a time limit** (`ALLOCATION_TIMEOUT_MS`, default 60000). A run that exceeds it is stopped, recorded as `failed`, leaves no assignments, and answers `504 ALLOCATION_TIMEOUT`; other API requests are not blocked meanwhile.
-- **Measured optimizer behavior (this machine; 200-student datasets).** The baseline takes under 100 ms up to 1000 students. The optimizer's flow solver is fast (about 15-35 ms at 200 students, 330-445 ms at 1000, without a timetable), but its timetable conflict search is **highly data-dependent**, from about a second to more than a minute for the same size: with data seed 5 `balanced` did not finish in 40 s while `many-ties` took 13 s; with data seed 1 `balanced` took 46 s while `many-ties` exceeded the 60 s limit (the run was stopped with `504` and left no assignments). A 30-student run with only eight shared slots took 17 s. For medium and larger datasets run the optimizer with `includeTimetable: false` (or accept a possible `504`). Note that a comparison between a timetable-checked baseline and an unchecked optimizer is not like-for-like; the compare endpoint warns when `timetableValidationEnabled` differs. The algorithm itself is unchanged; improving this is future algorithm work.
+- **Measured optimizer behavior (this machine; 200-student datasets).** The baseline takes under 100 ms up to 1000 students. The optimizer's flow solver is fast (about 15-35 ms at 200 students, 330-445 ms at 1000, without a timetable), but its timetable conflict search is **highly data-dependent**. Measured before the later speed-up, the same 200-student size ranged from about a second to more than a minute (for example 46 s for one `balanced` seed). The search was then made faster (cost-based pruning, best-first order) and given limits: it stops after a fixed amount of work (2.5 billion edges looked at by the flow solver, about 12 seconds on a typical machine, the same on every machine so results reproduce; also 2000 solves or 30 seconds as safety nets) and returns its best clash-free answer with `optimal: false` and a bound, so a run no longer fails because the search is long. Elective groups also shrink the search. See `docs/algorithm-design.md` (sections 3 and 7) for current numbers. A comparison between a timetable-checked baseline and an unchecked optimizer is not like-for-like; the compare endpoint warns when `timetableValidationEnabled` differs.
 
 ---
 
@@ -366,11 +373,11 @@ npm run test:watch
 cd ../algorithm && npm ci && npm test
 ```
 
-Current results: **backend 29 test files, 575 tests; algorithm 14 test files, 95 tests**, all passing. They run without a `.env` file, and the same two suites run in CI (`.github/workflows/ci.yml`, Node 20 and 22) on every push and pull request to `main`.
+Current results (2026-11-01): **backend 36 test files, 693 tests; algorithm 20 test files, 162 tests; frontend 17 test files, 273 tests**, all passing. They run without a `.env` file, and the same three suites run in CI (`.github/workflows/ci.yml`, Node 20 and 22; the frontend job also builds) on every push and pull request to `main`. The frontend tests wait up to one second for a screen, so on a heavily loaded machine a few may fail by timing alone; they pass when re-run.
 
 ### Real-database end-to-end check (manual)
 
-The unit and HTTP tests use mocked models. A separate script exercises the whole system against a **real MongoDB (Atlas)**: seeding, login and roles, CSV imports, both algorithms, publishing and a concurrent-publish race, replay verification, cancelling a long run, temporary passwords, deadlines, the dashboard views and more (132 checks at the time of writing).
+The unit and HTTP tests use mocked models. A separate script exercises the whole system against a **real MongoDB (Atlas)**: seeding, login and roles, CSV imports, both algorithms, publishing and a concurrent-publish race, replay verification, cancelling a long run, temporary passwords, deadlines, the dashboard views and more (147 checks, all passing on 2026-11-01).
 
 ```bash
 node tests/e2e/realdb.e2e.mjs
@@ -383,16 +390,16 @@ It needs `MONGODB_URI` and `JWT_SECRET` in `.env` (and your IP allowed in Atlas 
 ## Known Limitations
 
 1. **Rate limiting is in-memory.** Not shared across Node.js instances. For multi-instance deployments, use a shared store.
-2. **Algorithm policy not confirmed.** The optimizer does not reproduce the official IIT (ISM) allocation procedure.
+2. **Algorithm policy not confirmed.** The baseline follows the IIT (ISM) UG manual where it is explicit (70/30, per-slot priority lists) but the official procedure is unconfirmed, and the optimizer does not reproduce it.
 3. **No institutional SSO.** Authentication is local password-based. Institutional integration would require replacing the auth provider.
 4. **Deadlines are per semester only.** Preference windows are enforced (see Semesters), but there is no per-student or per-group deadline.
 5. **No real-time notifications.** Allocation run status is only available via polling.
 6. **Concurrency is tested against a fake in the unit tests and against real Atlas in the manual end-to-end script.** Publication safety relies on MongoDB's per-document atomic `findOneAndUpdate`; six simultaneous publishes of one run produced exactly one publication on Atlas. It has not been load-tested.
-7. **Optimizer is group-agnostic and not CGPA-priority based**, and compulsory-course / per-group rules are undefined; the system must not be presented as the official allotment procedure until policy is confirmed.
+7. **Strict CGPA order is not guaranteed.** The optimizer is held to the baseline's result and uses CGPA among equal results, but the baseline's 30% lottery and the protection of baseline results leave some lower-CGPA students holding seats higher-CGPA students ranked above their own (`cgpaPriorityViolations`). A second round, eligibility rules and the 10-student minimum are also not built; the system must not be presented as the official allotment procedure until policy is confirmed.
 8. **Crash recovery window.** A run abandoned mid-publication is blocked for 5 minutes (`PUBLISH_STALE_MS`) before it can be recovered automatically.
 9. **Student fields.** Faculty can create students and edit name/department, but only admins may change `cgpa`, `semesterId`, `electiveGroups` and `isActive` on update (faculty creation still sets an initial CGPA).
 10. **No self-service password reset.** Admins can create logins, list and deactivate them, and issue temporary passwords, and users can change their own password, but there is no "forgot password" email flow (no mail service). The first production admin is created with `node scripts/create-admin.js`.
-11. **Optimizer speed with timetable checking.** Its clash search is data dependent and can take from milliseconds to over a minute at 200 students (see `docs/algorithm-design.md`). Runs have a time limit and a memory cap, large runs get a warning, and `includeTimetable=false` avoids the search. Speeding it up is an algorithm change that is still to be decided.
+11. **Optimizer result may not be provably optimal.** The timetable search is exponential in the worst case, so it runs with a limit (about 12 s of work). When the limit is hit the answer is valid and clash-free but flagged `optimal: false` with a bound on how much better it could be. Runs also have a time limit and a memory cap, large runs get a warning, and `includeTimetable=false` avoids the search.
 12. **Run cancellation is per server process.** Cancelling stops a run only on the instance that is computing it; a stale `running` run left by a crash is cleaned up automatically.
 13. **Dev-tooling advisories.** `npm audit --omit=dev` reports 0 vulnerabilities; remaining advisories are in vitest/vite/esbuild test tooling (major-version upgrade not done).
 

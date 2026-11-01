@@ -85,11 +85,13 @@ vi.mock("../../src/models/Student.js", () => ({
 
 // ── Course model mock ────────────────────────────────────────────────────────
 const mockCourseFindLean = vi.fn();
+const mockCourseCount = vi.fn().mockResolvedValue(2);
 vi.mock("../../src/models/Course.js", () => ({
   default: {
     find: vi.fn().mockReturnValue({ lean: mockCourseFindLean }),
     findById: vi.fn(),
-    countDocuments: vi.fn().mockResolvedValue(0),
+    // how many electives a list may choose from (the pool of the group)
+    countDocuments: (...args) => mockCourseCount(...args),
   },
 }));
 
@@ -226,6 +228,7 @@ describe("PUT /api/v1/preferences/me", () => {
     // Student eligibility check mock
     mockStudentFindByIdLean.mockResolvedValue(studentRecord);
     mockCourseFindLean.mockResolvedValue(validCourses);
+    mockCourseCount.mockResolvedValue(2);
     mockPrefFindOneAndUpdate.mockReturnValue({
       populate: vi.fn().mockReturnThis(),
       lean: vi.fn().mockResolvedValue(savedPreference),
@@ -362,6 +365,82 @@ describe("PUT /api/v1/preferences/me", () => {
     expect(res.status).toBe(403);
     expect(res.body.error.code).toBe("FORBIDDEN");
     expect(res.body.error.message).toMatch(/not eligible/i);
+  });
+
+  describe("priority list length and the shared pool", () => {
+    const oid = (n) => n.toString(16).padStart(24, "0");
+    const courses = (n, extra = {}) =>
+      Array.from({ length: n }, (_, i) => ({
+        _id: oid(i + 1), courseCode: `OE${i + 1}`, title: `Course ${i + 1}`,
+        semesterId: "SEM2026A", electiveGroup: null, isActive: true, ...extra,
+      }));
+    const put = (body) =>
+      request(app).put("/api/v1/preferences/me").set("Cookie", `token=${makeToken(studentUser)}`).send(body);
+    const body = (n, status = "submitted", group = "OE1") => ({
+      semesterId: "SEM2026A", electiveGroup: group,
+      rankedCourseIds: Array.from({ length: n }, (_, i) => oid(i + 1)), status,
+    });
+
+    it("a submitted list needs 15 choices when 15 or more courses can be chosen", async () => {
+      mockCourseCount.mockResolvedValue(25);
+      mockCourseFindLean.mockResolvedValue(courses(10));
+      const res = await put(body(10));
+      expect(res.status).toBe(400);
+      expect(res.body.error.message).toMatch(/exactly 15/);
+    });
+
+    it("accepts a full list of 15 from a pool of 25", async () => {
+      mockCourseCount.mockResolvedValue(25);
+      mockCourseFindLean.mockResolvedValue(courses(15));
+      expect((await put(body(15))).status).toBe(200);
+    });
+
+    it("a draft may be shorter while the student is still choosing", async () => {
+      mockCourseCount.mockResolvedValue(25);
+      mockCourseFindLean.mockResolvedValue(courses(3));
+      expect((await put(body(3, "draft"))).status).toBe(200);
+    });
+
+    it("never allows more than 15 choices", async () => {
+      mockCourseCount.mockResolvedValue(25);
+      const res = await put(body(16, "draft"));
+      expect(res.status).toBe(400);
+    });
+
+    it("when fewer than 15 courses exist, a submitted list must hold all of them", async () => {
+      mockCourseCount.mockResolvedValue(4);
+      mockCourseFindLean.mockResolvedValue(courses(3));
+      expect((await put(body(3))).status).toBe(400);
+      mockCourseFindLean.mockResolvedValue(courses(4));
+      expect((await put(body(4))).status).toBe(200);
+    });
+
+    it("a course with no group of its own can be ranked in either group", async () => {
+      mockCourseCount.mockResolvedValue(2);
+      mockCourseFindLean.mockResolvedValue(courses(2));
+      expect((await put(body(2, "submitted", "OE1"))).status).toBe(200);
+      expect((await put(body(2, "submitted", "OE2"))).status).toBe(200);
+    });
+
+    it("a course that belongs to another group is still refused", async () => {
+      mockCourseCount.mockResolvedValue(2);
+      mockCourseFindLean.mockResolvedValue(courses(2, { electiveGroup: "OE2" }));
+      const res = await put(body(2, "submitted", "OE1"));
+      expect(res.status).toBe(400);
+      expect(res.body.error.message).toMatch(/does not belong to elective group/);
+    });
+
+    it("counts the pool of the group: open electives and that group's own, not compulsory", async () => {
+      mockCourseCount.mockResolvedValue(2);
+      mockCourseFindLean.mockResolvedValue(courses(2));
+      const { default: Course } = await import("../../src/models/Course.js");
+      await put(body(2, "submitted", "OE1"));
+      expect(mockCourseCount).toHaveBeenLastCalledWith({
+        semesterId: "SEM2026A", isActive: true, kind: { $ne: "compulsory" },
+        $or: [{ electiveGroup: null }, { electiveGroup: "OE1" }],
+      });
+      expect(Course).toBeDefined();
+    });
   });
 
   it("allows submission when student has no electiveGroups configured (unresolved policy)", async () => {

@@ -105,14 +105,22 @@ describe("POST /api/v1/allocations/run", () => {
     expect(res.status).toBe(201);
   });
 
+  it("accepts a split and a seed for the optimizer, which is held to the baseline by default", async () => {
+    const res = await post({ semesterId: "S", algorithm: "optimized", meritRatio: 0.6, randomRatio: 0.4, seed: 3 });
+    expect(res.status).toBe(201);
+    expect(mockSingle).toHaveBeenCalledWith(expect.objectContaining({ algorithm: "optimized", meritRatio: 0.6, seed: 3, optimizerFloor: "baseline", cgpaPriority: true }));
+  });
+
   it.each([
     ["missing algorithm", { semesterId: "S" }],
     ["unknown algorithm", { semesterId: "S", algorithm: "both" }],
     ["missing semesterId", { algorithm: "baseline" }],
     ["ratios not summing to 1", { semesterId: "S", algorithm: "baseline", meritRatio: 0.5, randomRatio: 0.4 }],
     ["negative ratio", { semesterId: "S", algorithm: "baseline", meritRatio: -0.1, randomRatio: 1.1 }],
-    ["ratio on optimized", { semesterId: "S", algorithm: "optimized", meritRatio: 0.5, randomRatio: 0.5 }],
-    ["seed on optimized", { semesterId: "S", algorithm: "optimized", seed: 1 }],
+    ["ratio on an unconstrained optimizer", { semesterId: "S", algorithm: "optimized", optimizerFloor: "none", meritRatio: 0.5, randomRatio: 0.5 }],
+    ["seed on an unconstrained optimizer", { semesterId: "S", algorithm: "optimized", optimizerFloor: "none", seed: 1 }],
+    ["ratios not summing to 1 on a floored optimizer", { semesterId: "S", algorithm: "optimized", meritRatio: 0.5, randomRatio: 0.4 }],
+    ["unknown optimizer floor", { semesterId: "S", algorithm: "optimized", optimizerFloor: "pure" }],
     ["fractional seed", { semesterId: "S", algorithm: "baseline", seed: 1.5 }],
     ["maxCoursesPerStudent 0", { semesterId: "S", algorithm: "baseline", maxCoursesPerStudent: 0 }],
   ])("400 for %s", async (_n, body) => {
