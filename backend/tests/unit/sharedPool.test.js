@@ -5,7 +5,12 @@
  * assignment. No database is needed.
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+
+// the logger loads the environment config, which needs a database URL that CI does not have
+vi.mock("../../src/utils/logger.js", () => ({
+  logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() },
+}));
 
 import {
   MAX_PREFERENCES_PER_GROUP,
