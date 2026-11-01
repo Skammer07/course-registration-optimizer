@@ -41,10 +41,11 @@ This is the contract for the frontend. The frontend must **display** results fro
 | POST / PATCH | `/students`, `/students/:id` | admin, faculty | PATCH of cgpa, semesterId, electiveGroups, isActive is admin only |
 | DELETE | `/students/:id` | admin | soft deactivate |
 | GET | `/courses`, `/courses/:id` | any | paginated list |
-| POST / PATCH | `/courses`, `/courses/:id` | admin, faculty | includes `timetableSlots: [{ day, start, end }]` |
+| GET | `/courses/my-compulsory` | student | the signed-in student's own compulsory courses for their semester: `{ semesterId, department, courses: [{ courseCode, title, timetableSlots }] }`. Uses the same department matching as the allocation (case and spacing ignored); empty when the student has no department or semester |
+| POST / PATCH | `/courses`, `/courses/:id` | admin, faculty | includes `timetableSlots: [{ day, start, end }]`, `kind` (`elective` default, or `compulsory`) and `departments: [string]`. A compulsory course needs at least one department, has no elective group, and `capacity` is optional (stored as 0). An elective still needs `capacity`; with no `electiveGroup` it is an **open elective**, offered to every group (OE1, OE2, ...) from one shared pool of seats. GET `/courses` accepts `kind=elective\|compulsory` |
 | DELETE | `/courses/:id` | admin | soft deactivate |
 | GET | `/preferences/me` | student | own preferences |
-| PUT | `/preferences/me` | student | body `{ semesterId, electiveGroup, rankedCourseIds: [courseId...], status: "draft" \| "submitted" }`; rank = array position |
+| PUT | `/preferences/me` | student | body `{ semesterId, electiveGroup, rankedCourseIds: [courseId...], status: "draft" \| "submitted" }`; rank = array position. Each group is its own priority list of **at most 15** courses, best first. A **submitted** list must be full: 15 courses, or every course the group can choose from when fewer exist (`400` otherwise); a draft may be shorter. The pool of a group is the open electives plus the courses of that group; compulsory courses cannot be ranked. The same course may be in the lists of two groups. |
 | GET | `/preferences`, `/preferences/:id` | admin, faculty | paginated. Filters: `semesterId`, `electiveGroup`, `status`, `student` (the student's `_id`; ranked courses are populated with `courseCode`, `title`) |
 | GET | `/preferences/overview` | admin, faculty | who has submitted: query `semesterId` (required), `search`, `department`, `status=all\|complete\|incomplete\|none`, `includeInactive`, `page`, `limit` (max 200). Returns `{ semesterId, groups, departments, summary: { students, complete, incomplete, none, perGroup: { G: { submitted, draft, missing } } }, students: [{ _id, studentId, name, cgpa, department, electiveGroups, isActive, status, groups: { G: { status: submitted\|draft\|missing\|na, count } } }], total, page, limit, totalPages }`. `summary` ignores the filters and counts active students only. A student is expected to have one list per group of their `electiveGroups` (every group of the semester when none is set) |
 | POST | `/users` | admin | create a login; `role: "student"` needs `studentId`. **Omit `password`** to get a server-generated one-time `temporaryPassword` in the response (`mustChangePassword: true`) |
@@ -66,7 +67,7 @@ This is the contract for the frontend. The frontend must **display** results fro
 | Import | Required columns | Optional columns |
 |---|---|---|
 | students | `studentId,name,cgpa` | `department,semesterId,electiveGroups` (separate groups with `;`), `isActive`, `email` (required on every row with `createLogins=true`) |
-| courses | `courseCode,title,capacity,semesterId,electiveGroup` | `timetable` (like `Monday 09:00-10:00; Wed 11:00-12:00`, full or 3-letter weekdays), `isActive` |
+| courses | `courseCode,title,capacity,semesterId,electiveGroup` | `timetable` (like `Monday 09:00-10:00; Wed 11:00-12:00`, full or 3-letter weekdays), `isActive`, `kind` (`elective` default or `compulsory`), `departments` (separate with `;`). For a compulsory row `capacity` and `electiveGroup` may be left empty and `departments` is required |
 | preferences | `studentId,semesterId,electiveGroup,courseCode,rank` | none. One row per ranked course; the list order is the rank order |
 
 **Validation is all-or-nothing.** Any problem returns `422 IMPORT_VALIDATION_FAILED` with `details: [{ row, column, message }]` (row = line number in the file, up to 50 shown, the message says how many in total) and nothing is written. Preference rows are checked like a student submission: the student is active, registered for that semester and eligible for the group; each course exists, is active, and is in that semester and group; no repeated rank or course. Admin imports bypass the preference deadline.
@@ -113,7 +114,7 @@ node scripts/create-admin.js --email admin@college.edu --reset  # recover an exi
 ```
 { student { studentId, name }, semesterId, published (bool),
   run { id, semesterId, algorithm, publishedAt } | null,
-  assignments [ { course { courseCode, title, electiveGroup }, preferenceRank, phase } ],
+  assignments [ { course { courseCode, title, electiveGroup }, preferenceRank, phase } ],   // electiveGroup = the list (OE1, OE2) the course was given for
   summary { coursesAllocated, maxCoursesPerStudent, message } | null }
 ```
 Before anything is published: `published: false`, `assignments: []`. If the student received no course: `published: true`, empty `assignments`, and `summary.message` explains it. Identity comes only from the login; no CGPA, other students, metrics or proposed (unpublished) rows are ever returned. A student account not linked to a student record gets `400`.
@@ -140,42 +141,48 @@ Before anything is published: `published: false`, `assignments: []`. If the stud
 ### POST /allocations/compare
 
 ```json
-{ "semesterId": "SEM-1", "maxCoursesPerStudent": 2, "meritRatio": 0.75, "randomRatio": 0.25,
-  "includeTimetable": true, "seed": 42 }
+{ "semesterId": "SEM-1", "maxCoursesPerStudent": 2, "meritRatio": 0.7, "randomRatio": 0.3,
+  "includeTimetable": true, "seed": 42, "optimizerFloor": "baseline", "cgpaPriority": true }
 ```
+`optimizerFloor` (`"baseline"` by default, or `"none"`): with `"baseline"` the optimizer may not leave any student worse off than the baseline's own result (see below). `cgpaPriority` (default `true`): among equal results, students with a higher CGPA get the better choices. Both also apply to `POST /allocations/run`.
 Only `semesterId` is required. `meritRatio + randomRatio` must equal 1. `seed` (0 to 4294967295) makes the baseline lottery reproducible; omitted means a seed is generated and stored. Returns `201 { data: { run } }`.
 
 ### POST /allocations/run
 
-Same body plus `"algorithm": "baseline" | "optimized"` (required). `meritRatio`, `randomRatio` and `seed` apply to `baseline` only and are rejected for `optimized`. Returns `201 { data: { run } }`.
+Same body plus `"algorithm": "baseline" | "optimized"` (required). `meritRatio`, `randomRatio` and `seed` apply to the baseline, and to the optimizer while it is held to the baseline's result (`optimizerFloor: "baseline"`, the default); with `optimizerFloor: "none"` they are rejected for `optimized`. Returns `201 { data: { run } }`.
 
 ### The `run` object (key fields)
 
 ```
 _id, semesterId, status ("completed"|"failed"|"publishing"|"published"|...), algorithmsRun ["baseline","optimized"],
 algorithmVersion, randomSeed, inputFingerprint,
-configuration { maxCoursesPerStudent, meritRatio, randomRatio, timetableValidationEnabled },
+configuration { maxCoursesPerStudent, meritRatio, randomRatio, timetableValidationEnabled, oneCoursePerGroup,
+                optimizerFloor ("baseline"|"none"|null), cgpaPriority },
 baselineMetrics / optimizedMetrics {
   totalAssignments, studentsWithAtLeastOneCourse, studentsWithTwoCourses, unallocatedStudents,
   totalCapacity, capacityUtilization, rank1Assignments, rank2Assignments, averagePreferenceRank,
-  capacityViolations, studentLimitViolations, duplicateAssignments, timetableClashes, constraintViolations },
+  capacityViolations, studentLimitViolations, duplicateAssignments, timetableClashes,
+  groupLimitViolations, studentsMissingAGroup, cgpaPriorityViolations, constraintViolations },
 baselineValidation / optimizedValidation { valid, errorCount, errorList },
 baselineRuntimeMs, optimizedRuntimeMs, totalRuntimeMs,
 comparison { improvement, validComparison, note },
 algorithmDetails {
   baseline:  { phaseSummary { merit { allocated }, random { allocated } }, assumptions: [strings] },
-  optimized: { assumptions { objective, flowSolves, conflictBranches, meritRandomQuotasPreserved: false },
+  optimized: { assumptions { objective, flowSolves, conflictBranches, meritRandomQuotasPreserved: false,
+                             oneCoursePerGroup, fixedTimetableEnabled, preferencesRemovedByFixedSlots,
+                             floorApplied, floorSlots, preferencesRemovedByFloor, cgpaPriority,
+                             optimal, searchStopReason, searchBound },
                totalPreferenceCost } },
 inputWarnings { skippedPreferences, droppedCourseEntries, messages },
 selectedAlgorithm, publishedAt
 ```
-`inputSnapshot` (full students/courses/preferences) is returned only by `GET /runs/:runId`, never in lists.
+`inputSnapshot` (full students, elective courses, preferences, timetable and each student's compulsory slots `fixedTimetable`) is returned only by `GET /runs/:runId`, never in lists.
 
-**Policy note for the UI:** the baseline keeps separate merit (CGPA) and random quotas per course; the optimizer maximizes the number of assignments and then minimizes preference cost, and does **not** preserve those quotas or CGPA priority. Show `comparison.note` and `algorithmDetails` so users see this. No winner is declared by the API.
+**Policy note for the UI:** the baseline keeps separate merit (CGPA) and random quotas per course; the optimizer maximizes the number of assignments (at most one per elective group) and then minimizes preference cost. By default it is held to the baseline's result (no student ends worse) and uses CGPA among equal results. Both give at most one course per elective group and never an elective that overlaps a student's compulsory classes. Show `comparison.note`, `comparison.evidence` and `algorithmDetails` (including `optimal: false` when the optimizer's search was limited) so users see this. No winner is declared by the API.
 
 ### GET /allocations/runs/:runId/results
 
-`data: { run, allocations: [{ algorithm, student: { studentId, name, cgpa, department }, course: { courseCode, title, capacity, electiveGroup }, preferenceRank, phase, status }], total, page, limit, totalPages }`. `phase` is `"merit"` or `"random"` for the baseline and null for the optimizer. `status` is `"proposed"` or `"published"`.
+`data: { run, allocations: [{ algorithm, student: { studentId, name, cgpa, department }, course: { courseCode, title, capacity, electiveGroup }, electiveGroup, preferenceRank, phase, status }], total, page, limit, totalPages }`. The allocation's own `electiveGroup` is the list it was given for (null for runs without groups). `phase` is `"merit"` or `"random"` for the baseline and null for the optimizer. `status` is `"proposed"` or `"published"`.
 
 ### Dashboard views (admin / faculty)
 
@@ -186,7 +193,12 @@ selectedAlgorithm, publishedAt
         inputCounts { students, courses, preferences, timetableIncluded }, publicationCheck },
   algorithms { baseline | optimized (null if not in the run): { algorithm, metrics, runtimeMs,
         validation { valid, errorCount, errorList }, details (phaseSummary/assumptions), published } },
-  comparison { available, difference (optimized minus baseline, incl. runtimeMs), note, warnings } }
+  comparison { available, difference (optimized minus baseline, incl. runtimeMs), note, warnings,
+               evidence { slots, better, same, worse, gained,            // per student and group, optimized vs baseline
+                          topCgpa { students, baselineAverageRank, optimizedAverageRank },
+                          others { students, baselineAverageRank, optimizedAverageRank },
+                          worstRank { baseline, optimized },
+                          cgpaPriorityViolations { baseline, optimized }, heldToBaseline } | null } }
 ```
 The input snapshot lists (students, CGPAs) are never included. `comparison.available` is false for single-algorithm runs.
 
@@ -202,7 +214,7 @@ The input snapshot lists (students, CGPAs) are never included. `comparison.avail
 - **Cancel** works only on a `running` run (`409` otherwise). The run becomes `cancelled`, its worker is stopped, and the request that started the run answers `409 ALLOCATION_CANCELLED`. Response `data`: `{ run, workerStopped }`; `workerStopped: false` means no live worker existed in this server process (for example after a restart), and the stale run was just marked cancelled. Cancellation is per server process.
 - **Delete** refuses `running` (cancel first) and `publishing`/`published` runs with `409`; published results are kept for audit. Response `data`: `{ id, semesterId, status, removedAssignments }`.
 - **Verify** re-runs the algorithm from the run's stored snapshot (baseline also uses the stored seed and ratios) and compares who got which course, rank and phase. Response `data`: `{ runId, allMatch, results: [{ algorithm, matches, storedCount, replayedCount, onlyInStored, onlyInReplay, storedVersion, currentVersion, sameVersion, seed, note }] }`. `matches: null` means it could not be replayed (for example a baseline run without a stored seed). A mismatch can mean the stored data changed, or the algorithm version differs (`sameVersion: false`). Replay uses the same worker and time limit as a normal run (`504` on timeout).
-- **Merit iteration:** baseline assignments now store `iteration` (1 or 2) for merit rows; it is `null` for random-phase and optimizer rows. It appears in `/results`, `by-student` and `by-course`.
+- **Merit iteration:** baseline assignments store `iteration` for merit rows: 1 or 2 without elective groups, or the group's round number (1 to the number of groups) with them; it is `null` for random-phase and optimizer rows. It appears in `/results`, `by-student` and `by-course`.
 - A run can now also have status `cancelled` (filter with `?status=cancelled`).
 
 ### POST /allocations/runs/:runId/publish
@@ -228,6 +240,14 @@ Body `{ "algorithm": "baseline" | "optimized" }` (required). The stored assignme
 | `PUBLICATION_VALIDATION_FAILED` | 422 | stored assignments failed re-validation |
 | `PUBLISH_FAILED` | 500 | publish rolled back to `completed` |
 
+## Rules applied by the algorithms
+
+- **One course per elective group:** each elective group (OE1, OE2, ...) is an independent priority list. A student receives at most one course from each group and never the same course twice, even when it is in both lists (`oneCoursePerGroup: true` in the run configuration; runs stored before this rule read as `false` and are checked as before). Every assignment records the group it was given for. The default merit/lottery split is 70/30. Metrics add `studentsMissingAGroup` (ranked a group but got nothing from it) and `groupLimitViolations` (must be 0).
+- **Compulsory courses:** courses with `kind: "compulsory"` are never allocated, ranked or counted in seats and demand. When the timetable check is on, a student's compulsory slots (from the compulsory courses whose `departments` include the student's department) are stored in the run snapshot as `inputSnapshot.fixedTimetable`, are part of the input fingerprint, and block overlapping electives. Students with no matching compulsory course, and compulsory courses without slots, are reported in `inputWarnings.messages`.
+- **Optimizer search limit:** the optimizer's timetable search runs with default limits: 2.5 billion edges of flow-solver work (about 12 s on a typical machine; identical on every machine, so the same input stops at the same point), 2000 flow solves, and 30 s as a safety net. If a limit stops it, the run still completes with a valid, clash-free result, and the optimized side's `assumptions` carry `optimal: false`, `searchStopReason` (`"work-limit"`, `"solve-limit"` or `"time-limit"`) and `searchBound: { assignments, preferenceCost }` (what any answer could still reach). When the search finishes, `optimal` is `true`.
+- **The optimizer is held to the baseline, and uses CGPA:** with `optimizerFloor: "baseline"` (the default) the optimizer receives the baseline's own allocation and may not leave any student worse than it in any group: for every (student, group) the baseline filled it must fill the same slot with a course ranked at least as high. Among all such allocations it returns one with the most assignments and then the lowest preference cost, so it is never worse than the baseline in total. With `cgpaPriority: true` it also uses CGPA: among results of equal preference cost, higher CGPA gets the better choices. The CGPA is the cumulative CGPA up to the previous semester, as at pre-registration. `comparison.evidence` shows the result student by student, and `cgpaPriorityViolations` counts the cases where a lower-CGPA student holds a course a higher-CGPA student ranked above their own (the baseline has some by design, through its 30% lottery). An optimizer-only run recomputes the baseline from the stored seed and split. Runs stored before this existed read as `optimizerFloor: null` and are replayed unconstrained.
+- **Merit/lottery split:** the default is 70% merit and 30% lottery per course (rounded merit seats, the lottery gets the rest, so no seat is lost). With elective groups the baseline gives merit seats in one round per group and draws the lottery per group.
+
 ## Runtime protections
 
 - **Time limit:** `ALLOCATION_TIMEOUT_MS` (default 60000). A run over the limit is stopped and recorded as `failed` (`504 ALLOCATION_TIMEOUT`).
@@ -238,5 +258,6 @@ Body `{ "algorithm": "baseline" | "optimized" }` (required). The stored assignme
 
 ## Known limits
 
-- The optimizer's timetable conflict search can take from about 1 second to over a minute on medium datasets; use `includeTimetable: false` for larger data.
+- The optimizer's timetable search is exponential in the worst case. It runs with a limit (about 12 s of work) and then returns a valid answer flagged `optimal: false`; use `includeTimetable: false` to skip the search.
+- Strict CGPA order everywhere is not guaranteed (the baseline's 30% lottery and the floor keep some lower-CGPA winners); there is no second allocation round, 10-student minimum, department eligibility for electives or half-semester course support yet.
 - Official institutional allocation rules are unconfirmed (see `docs/allocation-rules.md`).

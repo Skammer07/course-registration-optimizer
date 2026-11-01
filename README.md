@@ -240,8 +240,14 @@ course-registration-optimizer/
 │   │   ├── models/
 │   │   │   └── validateInput.js
 │   │   ├── algorithms/
-│   │   │   ├── baseline.js
+│   │   │   ├── baseline.js              # merit phase
+│   │   │   ├── randomAllocation.js      # lottery phase
+│   │   │   ├── allocationPipeline.js    # merit then lottery
+│   │   │   ├── optimizedAllocation.js   # min-cost max-flow + timetable search
 │   │   │   └── minCostMaxFlow.js
+│   │   ├── timetable/
+│   │   │   └── checkClash.js
+│   │   ├── services/                    # runSingleAllocation, runAllocationComparison
 │   │   ├── validation/
 │   │   │   └── validateAllocation.js
 │   │   ├── evaluation/
@@ -273,7 +279,7 @@ course-registration-optimizer/
     └── results/
 ```
 
-The backend and frontend folders may initially contain only placeholder files. They will be initialized by their respective owners.
+The tree above is the original plan. The repository now contains the working algorithm package, the backend API and the React frontend; see `docs/project-status-report.md` for what exists and what is left, and each folder's own README for how to run it.
 
 ---
 
@@ -563,14 +569,15 @@ The prototype is ready for presentation when:
 
 ## 17. Current Status and Next Actions
 
-**Current status:** initial repository setup; college rules and data schema not yet confirmed.
+**Current status (2026-11-01):** a working prototype. Both algorithms, the validator, the backend API and the web frontend exist and are tested (algorithm 162, backend 693, frontend 273 tests, all passing). The college's official rules are still **unconfirmed**; the IIT (ISM) UG manual was used as the reference for what is known (see `docs/allocation-rules.md`).
 
-### Immediate actions
-1. Create the shared GitHub repository.
-2. Add this README as the project reference.
-3. Invite all team members.
-4. Obtain the official allocation rules and approved data format.
-5. Update the problem specification.
-6. Implement the baseline before finalizing the optimization model.
+**Implemented:** baseline (merit then lottery, default 70/30), min-cost max-flow optimizer with timetable-clash search and a deterministic search limit, held to the baseline's result (no student ends worse) and using CGPA, elective groups as independent priority lists of up to 15 choices drawing from one shared pool (one course per group, never the same course twice), compulsory courses as fixed timetable slots, independent validation, metrics and comparison, run storage with replay verification and publishing, CSV import, student preference and result pages.
+
+**Not done yet:** strict CGPA order everywhere (the lottery and the floor keep some lower-CGPA winners), a second allocation round, minimum course size, department eligibility for electives, half-semester courses, semester/deadline and user-management screens, a repeatable benchmark and results chapter. Details and feasibility are in `docs/project-status-report.md`.
+
+### Next actions
+1. Confirm the open rules with the Academic Section (list in `docs/allocation-rules.md`, section 7).
+2. Decide how the optimizer should use CGPA.
+3. Build the remaining screens and the experiment write-up.
 
 **The first priority is correctness and institutional applicability, followed by optimization, evaluation, and interface polish.**

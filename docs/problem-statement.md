@@ -13,7 +13,8 @@ Given students (with CGPA), courses (with capacities and timetable slots) and ea
 - no course exceeds its capacity;
 - no student exceeds the allowed number of courses and no student gets the same course twice;
 - every assignment comes from a real preference of that student;
-- a student is not given two courses that clash in the timetable;
+- a student is not given two courses that clash in the timetable, or a course that overlaps one of their compulsory classes;
+- a student gets at most one course from each elective group;
 - any further rule the college confirms is respected (CGPA priority, elective-group requirements, eligibility).
 
 ## Research question
@@ -24,8 +25,8 @@ Can a preference-aware allocation algorithm improve the outcome for students com
 
 ## Approach
 
-1. **Baseline:** merit seats by CGPA in two iterations plus a random-lottery share of each course's seats.
-2. **Optimized:** minimum-cost maximum-flow, which maximizes the number of assignments and then minimizes total preference cost, with timetable clashes resolved by search.
+1. **Baseline:** per course, 70% of the seats go by CGPA and 30% by lottery (the split in the IIT (ISM) UG manual); with elective groups the merit seats are given in one round per group, each group being an independent priority list.
+2. **Optimized:** minimum-cost maximum-flow, which maximizes the number of assignments (at most one course per elective group) and then minimizes total preference cost, with timetable clashes resolved by search. Students' compulsory classes are fixed slots that no elective may overlap.
 3. **Independent validation** of every result, and a **comparison** of the two on identical input.
 4. A **web system** around it: students submit preferences and see their published result; administrators import data, run and compare the algorithms, inspect results and publish one.
 
@@ -34,7 +35,7 @@ Design details are in `algorithm-design.md`; the HTTP interface is in `api-contr
 ## Constraints and assumptions
 
 - Real student data is not available. Experiments use deterministic generated mock data (allowed for this project).
-- The allocation policy is not confirmed. The two algorithms follow different policies (the baseline keeps merit/random quotas; the optimizer ignores quotas and CGPA), so the comparison reports differences and **does not declare a winner**.
+- The allocation policy is not confirmed. The two algorithms follow different policies (the baseline keeps merit/lottery quotas; the optimizer ignores the quotas but is held to the baseline's result and uses CGPA among equal results), so the comparison reports differences and **does not declare a winner**.
 - The system is a prototype and must not be presented as the official registration system.
 
 ## Scope

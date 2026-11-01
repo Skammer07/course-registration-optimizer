@@ -54,3 +54,25 @@ jobs:
           cache-dependency-path: algorithm/package-lock.json
       - run: npm ci
       - run: npm test
+
+  frontend:
+    name: Frontend tests and build (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22]
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm test
+      # a production build catches errors the tests do not (bad imports, CSS)
+      - run: npm run build
