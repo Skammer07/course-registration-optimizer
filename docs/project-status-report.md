@@ -1,13 +1,13 @@
 # Course Registration Optimization System: Project Status Report
 
-Date: 1 November 2026. Algorithm version: 1.5.1.
+Date: 3 November 2026. Algorithm version: 1.5.1.
 
 This report answers three questions:
 1. How is the project implemented today?
 2. How does it differ from the "Current Algorithm Design and Working" overview?
 3. What remains, and is it feasible?
 
-It is based on reading the source code, running the three automated test suites, and running the algorithms on a generated 200-student dataset. The application pages were not opened in a browser, the real-database end-to-end script was not run, and timings are single runs on one machine. The earlier version of this report (31 October, algorithm 1.1.0) listed compulsory courses, elective groups and the optimizer speed-up as missing; all three are now implemented. The algorithm-only analysis is in `docs/implementation-status-report.md`.
+It is based on reading the source code, running the three automated test suites, and running the algorithms on a generated 200-student dataset. The application pages were not opened in a browser, and timings are single runs on one machine. The real-database end-to-end script (`backend/tests/e2e/realdb.e2e.mjs`) passed 147 of 147 checks on 1 November 2026, before the 500-student data was loaded. The earlier version of this report (31 October, algorithm 1.1.0) listed compulsory courses, elective groups and the optimizer speed-up as missing; all three are now implemented. The algorithm-only analysis is in `docs/implementation-status-report.md`.
 
 ---
 
@@ -19,7 +19,7 @@ The project is a working system with three layers: an allocation engine, a backe
 |---|---:|---:|---|
 | Algorithm | 20 | 162 | All pass |
 | Backend | 36 | 693 | All pass |
-| Frontend | 17 | 273 | All pass (a few can time out on a heavily loaded machine; they pass when re-run) |
+| Frontend | 17 | 274 | All pass (a few can time out on a heavily loaded machine; they pass when re-run) |
 
 **Implemented since the overview was written:**
 1. Elective groups (OE1, OE2, ...): each group is an independent priority list of up to **15 choices**, best first; a submitted list must be full. Open electives (a course with no group) are offered in every group, so both lists draw from **one shared pool** (they may even be identical). A student gets at most one course per group and never the same course twice (both algorithms, validator, metrics, backend, student page).
@@ -48,10 +48,11 @@ The project is a working system with three layers: an allocation engine, a backe
 
 - **Baseline:** students sorted by CGPA. Per course, the merit quota is the rounded 70% of the seats and the lottery gets the rest (default 70/30). With elective groups the merit phase serves **students in CGPA order, each taking the best available course of every group's own list** (never a course already held); the lottery draws per group and gives each student their best-ranked course with a free lottery seat. Without groups it keeps the original two merit iterations and per-course lottery. The seed is stored so runs reproduce.
 - **Optimizer:** a flow network (Source → Student → [Student, Group] → Course → Sink). The group node with capacity 1 makes "one course per group" exact, and an extra node stops a student receiving the same course through two groups. Cost is the course's rank in that group's list minus 1; it maximizes assignments, then minimizes preference cost. Timetable clashes are resolved by a best-first branching search with cost pruning, on a network built once and reused. A search limit (the backend uses 2.5 billion edges of work, about 12 s, plus 2000 solves and 30 s as safety nets) returns the best clash-free answer found, flagged `optimal: false` with a bound.
+- **Held to the baseline, with CGPA (default):** the optimizer is given the baseline's own allocation. For every (student, group) the baseline filled, only courses ranked at least as high are allowed, and the slot must stay filled; the baseline's result is the optimizer's first answer, so it is never worse. Edge costs carry a CGPA weight that only decides between results of equal preference cost. Both can be switched off per run (`optimizerFloor`, `cgpaPriority`). The metric `cgpaPriorityViolations` counts justified envy. Since 1.5.1 the greedy first answer never gives up a baseline course, so large inputs (500 students) improve on the baseline.
 - **Compulsory slots:** a per-student `fixedTimetable`. The optimizer removes overlapping electives before building the network (exact); the baseline checks them in both phases; the validator and metrics treat an overlap as a clash.
 - **Validator:** one shared definition checks capacity, per-student limit, duplicates, "was this course ranked", unknown ids, timetable clashes (including compulsory slots) and at most one course per group. The backend uses it again before publishing.
 - **Metrics and comparison:** assignments, students with one or two courses, unallocated, utilization, rank-1 and rank-2 counts, average rank, violation counts, plus `studentsMissingAGroup` and `groupLimitViolations`. The comparison reports differences and declares no winner.
-- **Entry points:** `runSingleAllocation`, `runAllocationComparison`, central exports, `ALGORITHM_VERSION` (1.3.0).
+- **Entry points:** `runSingleAllocation`, `runAllocationComparison`, central exports, `ALGORITHM_VERSION` (1.5.1).
 
 ### 2.3 Backend layer
 
@@ -68,8 +69,8 @@ The project is a working system with three layers: an allocation engine, a backe
 | User | Screens that exist |
 |---|---|
 | Everyone | Sign in, change password, session-expiry handling |
-| Admin / faculty | Run history; run comparison dashboard (overview, charts, students, courses, details, including a note when the optimizer's search stopped early); course and student lists with add/edit (course type and departments); weekly timetable grid; CSV import |
-| Admin | New run (compare or single, 70/30 split, seed, limit, timetable on/off, cancel); run actions (publish, verify, delete) |
+| Admin / faculty | Run history; run comparison dashboard (overview with the better / same / worse evidence panel, charts, students, courses, details, including a note when the optimizer's search stopped early); course and student lists with add/edit (course type and departments); weekly timetable grid; CSV import |
+| Admin | New run (compare or single, 70/30 split, seed, limit, timetable on/off, hold the optimizer to the baseline, use CGPA, cancel); run actions (publish, verify, delete) |
 | Student | My preferences (one list per group, up to 15 choices each, "n of 15 chosen", compulsory classes and overlap warnings); My results (allocated electives with their group, and compulsory courses) |
 
 ---
@@ -90,12 +91,13 @@ Inputs, the baseline's CGPA ordering and shared merit quota, the seeded lottery,
 | Optimizer enforces only a global limit | At most **one course per elective group** (each group an independent list drawing from one shared pool), never the same course twice; exact in the flow. |
 | Preference lists are free length | At most **15 choices** per group; a submitted list must be full. |
 | Compulsory courses not modelled | Fixed per-student slots (matched by department); never allocated. |
+| Optimizer ignores CGPA | Held to the baseline's result (no student ends worse) with CGPA deciding between equal results; measured by `cgpaPriorityViolations` and a per-student comparison. |
 | Optimizer can take 39 s to over 80 s on 200 students | Faster (cost pruning, best-first) and bounded by a search limit; with groups, 4.2 s and proved optimal on the 200-student test data. |
 | "Tests for groups, compulsory clashes, large datasets: none" | Added (including an exhaustive exactness check against brute force). |
 
 ### 3.3 Still as the overview says
 
-The optimizer does not enforce CGPA priority; eligibility, prerequisites, reserved seats and multiple rounds are not modelled; the baseline is not confirmed against an official procedure beyond what the UG manual states.
+Strict CGPA order is not enforced everywhere (the optimizer is held to the baseline's result and uses CGPA only between equal results, and the baseline's lottery lets lower-CGPA students win some seats); eligibility, prerequisites, reserved seats and multiple rounds are not modelled; the baseline is not confirmed against an official procedure beyond what the UG manual states.
 
 ---
 
@@ -112,7 +114,7 @@ Generated data (semester `SEM-2026`: 200 students, 20 electives in two groups, 8
 | Average preference rank | 2.20 | 2.06 |
 | Time | 0.06 s | 4.2 s (search finished, proved optimal) |
 
-The optimizer ignores CGPA while the baseline honours it, so this is not yet a like-for-like comparison.
+This run is from before the CGPA work (the optimizer ignored CGPA), so it is not like-for-like with the baseline. The like-for-like results are in the next sections.
 
 ---
 
@@ -159,8 +161,8 @@ All items are technically possible with the current design. Effort is for one de
 
 | # | Remaining item | Feasible? | Effort | Needs the college? |
 |---|---|---|---|---|
-| 1 | **CGPA in the optimizer.** Options: no student ends worse than under the baseline (or a pure-CGPA ranking), a CGPA weight on cost, keep the merit seats as the baseline gives them and optimize only the lottery seats. | Yes | 1 to 3 days | Yes: what CGPA priority means, current or semester CGPA, equal-CGPA rule |
-| 2 | Per-student "better / same / worse than baseline" evidence on the run page | Yes | 1 day | No |
+| 1 | ~~CGPA in the optimizer~~ | **Done** (1.5.0, improved in 1.5.1): held to the baseline's result plus a CGPA tie-break. Strict CGPA order everywhere stays open (needs a policy on lottery seats). | | |
+| 2 | ~~Per-student "better / same / worse than baseline" evidence~~ | **Done** (run page panel) | | |
 | 3 | Second allocation round (vacant seats), random fill for short lists, 10-student minimum | Yes | 2 to 3 days | Yes |
 | 4 | Department eligibility for electives, similar-content exclusions | Yes | 1 to 2 days | Yes |
 | 5 | ~~15-preference limit~~ | **Done** (at most 15; a submitted list must be full) | | |
@@ -170,7 +172,7 @@ All items are technically possible with the current design. Effort is for one de
 | 9 | Compulsory courses in admin views (by-student view, CSV export) and clearer wording on the Courses page | Yes | 1 day | No |
 | 10 | Optimizer: re-solve a branch from its parent's flow (about 45 ms per solve at 200 students now), identical-slot clash groups in the flow | Yes | 2 to 4 days | No |
 | 11 | Repeatable benchmark and results write-up for the project report | Yes | 2 to 3 days | No |
-| 12 | Run the real-database end-to-end script; check the new pages in a browser | Yes | under 1 day | No |
+| 12 | Check the new pages in a browser (the real-database script passed 147/147 on 1 November; re-run it against the 500-student data) | Yes | under 1 day | No |
 
 **Risks**
 - The optimizer's result is not always provably optimal when the search limit is hit; the output says so, and the report should too.
@@ -182,9 +184,9 @@ All items are technically possible with the current design. Effort is for one de
 
 ## 6. Recommended order
 
-1. Decide the CGPA approach and confirm the open rules with the Academic Section (`docs/allocation-rules.md`, section 7).
-2. Build the optimizer's CGPA handling and the per-student comparison evidence.
-3. Admin screens, compulsory courses in the admin views, 15-preference limit.
+1. Confirm the open rules with the Academic Section (`docs/allocation-rules.md`, section 7), including whether lottery seats may be overridden by CGPA.
+2. ~~CGPA handling and per-student comparison evidence~~ (done).
+3. Admin screens for semesters and users, compulsory courses in the admin views (the 15-preference limit is done).
 4. Second round, minimum size, eligibility (once confirmed).
 5. Benchmark and results write-up.
 

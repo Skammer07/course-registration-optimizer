@@ -7,7 +7,7 @@ Scope: the `algorithm/` package, its wiring in `backend/`, and the project's des
 
 Legend: ✅ implemented and matches the design document, ⚠️ implemented but differs from the document or has a gap, ❌ not implemented.
 
-## 0. Status on 2026-11-01 (algorithm 1.3.0)
+## 0. Status on 2026-11-03 (algorithm 1.5.1)
 
 | Item from this audit | Now |
 |---|---|
@@ -33,13 +33,13 @@ Legend: ✅ implemented and matches the design document, ⚠️ implemented but 
 | Validation module and metrics | ✅ |
 | Single / comparison services, central exports, version tag | ✅ |
 | Backend APIs (baseline-only, optimized-only, compare) | ✅ |
-| CGPA-aware optimizer | ❌ |
+| CGPA-aware optimizer | ❌ at audit; ✅ now (1.5.0, improved in 1.5.1) |
 | Compulsory-course timetable constraints | ❌ at audit; ✅ now |
 | Elective-group constraints (one course per group) | ❌ at audit; ✅ now |
 | Optimizer performance work (pruning) | ❌ at audit; ✅ now |
-| Tests for CGPA priority, compulsory clashes, groups, large datasets | ❌ at audit; added except CGPA |
+| Tests for CGPA priority, compulsory clashes, groups, large datasets | ❌ at audit; ✅ all added now |
 
-**Verdict.** The "what is implemented" half of the design document is accurate, with the few differences listed in section 3.1. All four planned improvements are still open. All four are technically feasible (section 5). Two of them, CGPA priority and the elective-group rule, are blocked less by engineering than by missing college policy: `docs/allocation-rules.md` is still an unfilled template.
+**Verdict.** The "what is implemented" half of the design document is accurate, with the few differences listed in section 3.1. **Update:** all four planned improvements are now implemented (algorithm 1.5.1); the remaining work is in the project status report. All four were technically feasible (section 5). Two of them, CGPA priority and the elective-group rule, are blocked less by engineering than by missing college policy: `docs/allocation-rules.md` is still an unfilled template.
 
 ---
 
@@ -70,7 +70,7 @@ Legend: ✅ implemented and matches the design document, ⚠️ implemented but 
 - ✅ Comparison (`compareAllocations`) reports optimized-minus-baseline per metric plus runtimes, and declares no winner.
 
 ### 2.5 Services, exports, versioning
-- ✅ `runSingleAllocation(input, {algorithm})`, `runAllocationComparison`, and a central `src/index.js`. `ALGORITHM_VERSION = "1.1.0"` is stored with each run.
+- ✅ `runSingleAllocation(input, {algorithm})`, `runAllocationComparison`, and a central `src/index.js`. `ALGORITHM_VERSION` ("1.1.0" at the audit, 1.5.1 now) is stored with each run.
 
 ### 2.6 Backend
 - ✅ `POST /allocations/compare` and `POST /allocations/run` (baseline or optimized) are both admin-only. Stored runs keep an input snapshot, fingerprint, seed and version, with replay verification and publish. Algorithms run in a worker thread with a time limit and a memory cap.
@@ -102,7 +102,9 @@ Since the audit: row 1 is changed for elective groups (the lottery now draws per
 
 ## 4. Remaining work, with feasibility
 
-### 4.1 CGPA-aware lexicographic optimizer: ❌ still not implemented. Feasible.
+### 4.1 CGPA-aware lexicographic optimizer: ✅ DONE in 1.5.0 (improved for large inputs in 1.5.1).
+
+*Update 2026-11-03:* implemented as "held to the baseline's result" (no student ends worse in any group) plus a CGPA weight that only decides between equal preference cost, with the `cgpaPriorityViolations` metric and a per-student comparison on the run page. Strict CGPA order everywhere is not promised (the baseline's 30% lottery and the floor keep some lower-CGPA winners). The text below is the original plan.
 
 *Update 2026-11-01:* the IIT (ISM) UG manual gives the college's rule (70% of an oversubscribed course's seats by CGPA, 30% random), so the optimizer should respect that split rather than rank by CGPA alone. Options are listed in `docs/algorithm-design.md` section 9.
 
@@ -181,7 +183,7 @@ Implemented: cost-based pruning, best-first search, cached clashes, direct node 
 
 ### 4.6 Tests still to be written
 
-*Update 2026-11-01:* compulsory-clash, elective-group, search-limit and exactness tests now exist. Still to write: CGPA priority scenarios, once the CGPA design is chosen.
+*Update 2026-11-03:* compulsory-clash, elective-group, shared-pool, search-limit, exactness and floor / CGPA tests now exist (algorithm: 20 files, 162 tests). The list below is the original plan.
 - CGPA priority scenarios (higher CGPA wins among equal assignment counts; tie rules).
 - Compulsory clash scenarios for both algorithms and the validator.
 - Elective-group scenarios (two courses in one group never assigned; group slots in the flow).
@@ -192,7 +194,7 @@ Implemented: cost-based pruning, best-first search, cached clashes, direct node 
 
 ## 5. Recommended order of work
 
-*Update 2026-11-01:* steps 1 to 3 are done. The next step is the CGPA design (step 4); see `docs/project-status-report.md` for the current plan.
+*Update 2026-11-03:* steps 1 to 4 are done. Step 5 (baseline fairness) is partly done (70/30 default, no seat lost to rounding); see `docs/project-status-report.md` for what remains.
 
 | Step | Work | Needs from the college/team |
 |---|---|---|
