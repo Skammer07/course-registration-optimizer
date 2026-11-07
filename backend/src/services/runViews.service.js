@@ -248,19 +248,8 @@ async function loadAssignments(run, algorithm) {
     .lean();
 }
 
-/**
- * One row per student: the courses they got (with preference rank and phase),
- * or none. Students who received nothing are included, using the run's stored
- * snapshot as the student list.
- */
-export async function getResultsByStudent(runId, query = {}) {
-  const { algorithm: requested, search, status = "all", sort = "studentId", page = 1, limit = 50 } = query;
-  const run = await loadRun(runId);
-  assertViewable(run);
-  const algorithm = resolveAlgorithm(run, requested);
-
-  const rows = await loadAssignments(run, algorithm);
-
+/** One summary per student (courses sorted by rank, average rank, status) for one algorithm's rows. */
+function summariseStudents(run, rows) {
   const byStudent = new Map();
   for (const s of run.inputSnapshot?.students ?? []) {
     byStudent.set(s.id, { studentId: s.id, name: s.name, cgpa: s.cgpa, courses: [] });
@@ -280,19 +269,61 @@ export async function getResultsByStudent(runId, query = {}) {
       iteration: a.iteration ?? null,
     });
   }
-
-  let list = [...byStudent.values()].map((s) => {
+  for (const s of byStudent.values()) {
     s.courses.sort((x, y) => (x.preferenceRank ?? 0) - (y.preferenceRank ?? 0));
     const ranks = s.courses.map((c) => c.preferenceRank).filter((r) => Number.isFinite(r));
-    return {
-      ...s,
-      coursesAllocated: s.courses.length,
-      averageRank: ranks.length ? Number((ranks.reduce((a, b) => a + b, 0) / ranks.length).toFixed(2)) : null,
-      status: s.courses.length > 0 ? "allocated" : "unallocated",
-    };
-  });
+    s.coursesAllocated = s.courses.length;
+    s.averageRank = ranks.length ? Number((ranks.reduce((x, y) => x + y, 0) / ranks.length).toFixed(2)) : null;
+    s.status = s.courses.length > 0 ? "allocated" : "unallocated";
+  }
+  return byStudent;
+}
 
-  if (status !== "all") list = list.filter((s) => s.status === status);
+/**
+ * One row per student: the courses they got (with preference rank and phase),
+ * or none. Students who received nothing are included, using the run's stored
+ * snapshot as the student list. When the run holds both algorithms, each row also
+ * carries the other algorithm's result (`other`) and whether the two differ.
+ */
+export async function getResultsByStudent(runId, query = {}) {
+  const { algorithm: requested, search, status = "all", sort = "studentId", page = 1, limit = 50 } = query;
+  const run = await loadRun(runId);
+  assertViewable(run);
+  const algorithm = resolveAlgorithm(run, requested);
+
+  const rows = await loadAssignments(run, algorithm);
+
+  const byStudent = summariseStudents(run, rows);
+
+  // With both algorithms in the run, set each student's result beside the other algorithm's.
+  const otherAlgorithm = containedAlgorithms(run).find((x) => x !== algorithm) ?? null;
+  let compare = { available: false, otherAlgorithm: null, differing: 0, total: byStudent.size };
+  if (otherAlgorithm) {
+    const other = summariseStudents(run, await loadAssignments(run, otherAlgorithm));
+    let differing = 0;
+    for (const [id, mine] of byStudent) {
+      const theirs = other.get(id);
+      const key = (c) => `${c.electiveGroup ?? ""}|${c.courseCode}`;
+      const mineKeys = new Set(mine.courses.map(key));
+      const theirKeys = new Set((theirs?.courses ?? []).map(key));
+      const differs = mineKeys.size !== theirKeys.size || [...mineKeys].some((k) => !theirKeys.has(k));
+      if (differs) differing += 1;
+      mine.other = {
+        algorithm: otherAlgorithm,
+        courses: theirs?.courses ?? [],
+        coursesAllocated: theirs?.coursesAllocated ?? 0,
+        averageRank: theirs?.averageRank ?? null,
+      };
+      mine.differs = differs;
+    }
+    compare = { available: true, otherAlgorithm, differing, total: byStudent.size };
+  }
+
+  let list = [...byStudent.values()];
+
+  if (status === "differs") list = list.filter((s) => s.differs === true);
+  else if (status === "same") list = list.filter((s) => s.differs === false);
+  else if (status !== "all") list = list.filter((s) => s.status === status);
   if (search) {
     const q = text(search);
     list = list.filter((s) => text(s.studentId).includes(q) || text(s.name).includes(q));
@@ -313,6 +344,7 @@ export async function getResultsByStudent(runId, query = {}) {
     runId: run._id,
     algorithm,
     snapshotAvailable: Boolean(run.inputSnapshot?.students?.length),
+    compare,
     students: items,
     ...paging,
   };

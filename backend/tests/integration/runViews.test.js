@@ -39,6 +39,7 @@ vi.mock("../../src/models/User.js", () => ({
 const RUN_ID = "507f1f77bcf86cd799440010";
 const runs = {};
 let allocRows = [];
+let allocRowsBy = null; // optional per-algorithm rows
 const allocFinds = [];
 const studentLookups = [];
 const courseLookups = [];
@@ -62,7 +63,7 @@ vi.mock("../../src/models/Allocation.js", () => ({
       q.sort = (s) => { q.sortArg = s; return q; };
       q.skip = () => q;
       q.limit = () => q;
-      q.lean = async () => allocRows;
+      q.lean = async () => allocRowsBy?.[filter.algorithm] ?? allocRows;
       return q;
     },
     countDocuments: async () => allocRows.length,
@@ -139,6 +140,7 @@ const row = (sid, name, cgpa, code, title, rank, phase) => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  allocRowsBy = null;
   allocFinds.length = 0; studentLookups.length = 0; courseLookups.length = 0;
   knownStudent = null; knownCourse = null;
   for (const k of Object.keys(runs)) delete runs[k];
@@ -255,7 +257,44 @@ describe("GET /runs/:id/results/by-student", () => {
 
   it("queries only the selected algorithm's rows", async () => {
     await get(url("?algorithm=optimized"));
-    expect(allocFinds.at(-1).filter).toMatchObject({ algorithm: "optimized" });
+    expect(allocFinds.some((f) => f.filter.algorithm === "optimized")).toBe(true);
+  });
+
+  describe("comparison with the other algorithm", () => {
+    beforeEach(() => {
+      allocRowsBy = {
+        baseline: [row("S1", "Asha", 9, "C1", "Algorithms", 1, "merit"), row("S2", "Ravi", 8, "C1", "Algorithms", 1, "merit")],
+        optimized: [row("S1", "Asha", 9, "C1", "Algorithms", 1), row("S2", "Ravi", 8, "C2", "Machine Learning", 2), row("S3", "Meera", 7, "C1", "Algorithms", 1)],
+      };
+    });
+
+    it("sets each student's result beside the other algorithm's and flags the differences", async () => {
+      const d = (await get(url("?algorithm=baseline"))).body.data;
+      expect(d.compare).toEqual({ available: true, otherAlgorithm: "optimized", differing: 2, total: 3 });
+      const byId = Object.fromEntries(d.students.map((s) => [s.studentId, s]));
+      expect(byId.S1.differs).toBe(false);
+      expect(byId.S2).toMatchObject({ differs: true, other: { algorithm: "optimized", coursesAllocated: 1, averageRank: 2 } });
+      expect(byId.S2.other.courses[0].courseCode).toBe("C2");
+      expect(byId.S3).toMatchObject({ differs: true, status: "unallocated" });
+      expect(byId.S3.other.coursesAllocated).toBe(1);
+    });
+
+    it("is symmetric: viewing the optimizer shows the baseline as the other", async () => {
+      const d = (await get(url("?algorithm=optimized"))).body.data;
+      expect(d.compare).toMatchObject({ otherAlgorithm: "baseline", differing: 2 });
+    });
+
+    it("can show only the differing or only the unchanged students", async () => {
+      expect((await get(url("?algorithm=baseline&status=differs"))).body.data.students.map((s) => s.studentId)).toEqual(["S2", "S3"]);
+      expect((await get(url("?algorithm=baseline&status=same"))).body.data.students.map((s) => s.studentId)).toEqual(["S1"]);
+    });
+
+    it("a single-algorithm run has no comparison", async () => {
+      runs[RUN_ID] = makeRun({ algorithmsRun: ["baseline"], selectedAlgorithm: null, status: "completed" });
+      const d = (await get(url())).body.data;
+      expect(d.compare).toMatchObject({ available: false, otherAlgorithm: null, differing: 0 });
+      expect(d.students[0].other).toBeUndefined();
+    });
   });
 
   it("two algorithms and nothing published needs an explicit algorithm", async () => {

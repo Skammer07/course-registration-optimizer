@@ -155,7 +155,7 @@ export const exportRunQuerySchema = z.object({
 export const byStudentQuerySchema = z.object({
   algorithm: algorithmEnum.optional(),
   search: z.string().trim().max(100).optional(),
-  status: z.enum(["all", "allocated", "unallocated"]).optional().default("all"),
+  status: z.enum(["all", "allocated", "unallocated", "differs", "same"]).optional().default("all"),
   sort: z.enum(["studentId", "name", "cgpa", "coursesAllocated", "averageRank"]).optional().default("studentId"),
   page: z.coerce.number().int().min(1).optional().default(1),
   limit: z.coerce.number().int().min(1).max(200).optional().default(50),
