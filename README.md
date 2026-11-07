@@ -6,7 +6,7 @@
 
 We are developing a course registration and elective allocation system for a college environment where students submit ranked course preferences, courses have limited seats, and CGPA or other institutional rules determine allocation priority.
 
-The system will provide:
+The system provides:
 - A student interface for submitting ranked elective preferences.
 - An administrator interface for managing registration data and running allocation.
 - An allocation engine implementing the existing college allocation method and proposed optimization algorithms.
@@ -40,29 +40,18 @@ Can a preference-aware allocation algorithm improve course allocation outcomes c
 
 ---
 
-## 3. Current Understanding of the College Process
+## 3. How the Project Treats the College Process
 
-Based on our initial understanding:
+The college's own allocation procedure is not available to the project, so the project follows the IIT (ISM) UG manual where the manual is explicit, and the team fixed the remaining points itself. The rules, their sources and every decision are listed in `docs/allocation-rules.md`.
 
-1. Students have compulsory courses assigned to them.
-2. Students must obtain courses from multiple elective groups.
-3. Students submit ranked preferences, potentially up to 15 choices per group.
-4. Each course has a limited number of seats.
-5. CGPA affects which students receive oversubscribed courses.
-6. The system must allocate the required electives or explicitly report unallocated slots.
+1. **Compulsory courses** are assigned to students by department. They are modelled as fixed timetable slots per student and are never allocated; no elective that overlaps one is given.
+2. **Elective groups.** Each elective slot (OE1, OE2, ...) is a group with its own priority list, and a student gets at most one course per group. Open electives are offered in every group, so the lists draw from one shared pool.
+3. **Preferences** are ranked, with at most 15 choices per group; a submitted list must be full.
+4. **Seats.** Each course has a limited number of seats, which is a hard limit.
+5. **CGPA.** In the baseline, 70% of an oversubscribed course's seats go by CGPA and 30% by lottery (the UG manual's split). The optimizer is held to the baseline's result and uses CGPA only between equal results.
+6. **Unallocated students** are reported. The system does not guarantee a course for every slot.
 
-**These are preliminary assumptions, not confirmed specifications.**
-
-Before implementing the final algorithms, we must verify:
-- The exact allocation procedure.
-- CGPA priority and tie-breaking rules.
-- Whether allocation happens in multiple rounds.
-- How incomplete preferences are handled.
-- Eligibility, quotas, and course restrictions.
-- Whether timetable conflicts must be considered.
-- Whether course capacities can change during allocation.
-
-The existing allocation method must be reproduced accurately before it is used as the baseline for comparison.
+Not modelled: a second allocation round, the 10-student minimum for a course, eligibility by department, prerequisites and half-semester courses. The prototype is therefore not the official allotment procedure.
 
 ---
 
@@ -217,69 +206,50 @@ course-registration-optimizer/
 ├── README.md
 ├── .gitignore
 ├── .env.example
+├── .github/workflows/ci.yml        # tests for algorithm, backend and frontend (build too)
 │
 ├── docs/
 │   ├── problem-statement.md
 │   ├── allocation-rules.md
 │   ├── algorithm-design.md
-│   ├── api-contract.md
-│   └── meeting-notes.md
+│   └── api-contract.md
 │
 ├── data/
-│   ├── samples/
-│   │   ├── students.json
-│   │   ├── courses.json
-│   │   └── preferences.json
+│   ├── samples/                     # small JSON examples
+│   ├── timetable/mock_timetable.json
 │   ├── generated/
-│   ├── raw/                 # Local only; never commit
-│   └── private/             # Local only; never commit
+│   ├── backups/                     # local only: database backups before a wipe (git-ignored)
+│   ├── raw/                         # local only; never commit
+│   └── private/                     # local only; never commit
 │
-├── algorithm/
-│   ├── package.json
+├── algorithm/                       # pure JavaScript allocation engine (described in docs/)
 │   ├── src/
-│   │   ├── models/
-│   │   │   └── validateInput.js
-│   │   ├── algorithms/
-│   │   │   ├── baseline.js              # merit phase
-│   │   │   ├── randomAllocation.js      # lottery phase
-│   │   │   ├── allocationPipeline.js    # merit then lottery
-│   │   │   ├── optimizedAllocation.js   # min-cost max-flow + timetable search
-│   │   │   └── minCostMaxFlow.js
-│   │   ├── timetable/
-│   │   │   └── checkClash.js
-│   │   ├── services/                    # runSingleAllocation, runAllocationComparison
-│   │   ├── validation/
-│   │   │   └── validateAllocation.js
-│   │   ├── evaluation/
-│   │   │   ├── metrics.js
-│   │   │   └── compare.js
+│   │   ├── algorithms/              # baseline, randomAllocation, allocationPipeline,
+│   │   │                            # optimizedAllocation, minCostMaxFlow
+│   │   ├── timetable/checkClash.js
+│   │   ├── services/                # runSingleAllocation, runAllocationComparison
+│   │   ├── validation/validateAllocation.js
+│   │   ├── evaluation/              # metrics.js, compare.js
 │   │   └── index.js
 │   ├── tests/
-│   └── scripts/
+│   └── scripts/                     # benchmarkOptimizer.js, runSample.js
 │
-├── backend/
-│   ├── package.json
-│   └── src/
-│       ├── models/
-│       ├── routes/
-│       ├── controllers/
-│       ├── services/
-│       └── server.js
+├── backend/                         # Express + MongoDB API (see backend/README.md)
+│   ├── src/                         # config, controllers, middleware, models, routes,
+│   │                                # seed (data generators), services, utils, validators
+│   ├── scripts/                     # seed.js, seed-realistic.js, create-admin.js
+│   ├── postman/
+│   └── tests/                       # unit, integration, e2e
 │
-├── frontend/
-│   ├── package.json
-│   └── src/
-│       ├── components/
-│       ├── pages/
-│       ├── services/
-│       └── App.jsx
+├── frontend/                        # React app (see frontend/README.md)
+│   └── src/                         # api, auth, components, features, lib, pages, test
 │
 └── experiments/
     ├── README.md
     └── results/
 ```
 
-The tree above is the original plan. The repository now contains the working algorithm package, the backend API and the React frontend; see each folder's own README for how to run it.
+Each folder's own README (backend, frontend, experiments) says how to run it.
 
 ---
 
@@ -290,34 +260,24 @@ The algorithm must remain independent of the database and UI.
 ### Student
 
 ```json
-{
-  "id": "S001",
-  "cgpa": 9.2,
-  "program": "CSE"
-}
+{ "id": "IITISM0001", "name": "Student0001", "cgpa": 9.2 }
 ```
 
 ### Course
 
 ```json
-{
-  "id": "C101",
-  "name": "Machine Learning",
-  "group": "A",
-  "capacity": 60
-}
+{ "id": "C1", "name": "Course1", "capacity": 60, "electiveGroup": null }
 ```
+
+A course with no `electiveGroup` is open: it can appear in the list of every group.
 
 ### Preference
 
 ```json
-{
-  "studentId": "S001",
-  "group": "A",
-  "courseId": "C101",
-  "rank": 1
-}
+{ "studentId": "IITISM0001", "courseId": "C1", "rank": 1, "electiveGroup": "OE1" }
 ```
+
+Optional inputs are a course `timetable` and each student's compulsory-course slots (`fixedTimetable`). The complete contract, with options, is in `docs/algorithm-design.md`.
 
 ### Registration configuration
 
@@ -328,11 +288,11 @@ The algorithm must remain independent of the database and UI.
 }
 ```
 
-These examples are synthetic and provisional. The final schema must reflect the actual institutional rules.
+These examples use the generated mock data; real institutional data would have to be mapped to this shape.
 
 ### Required output
 
-Each allocation run should return:
+Each allocation run returns:
 - Algorithm name and version.
 - Student ID.
 - Elective group.
@@ -342,54 +302,29 @@ Each allocation run should return:
 - Summary metrics.
 - Validation results.
 
-The algorithm must not depend on MongoDB documents or React state. It should receive plain structured data and return a structured result.
+The algorithm does not depend on MongoDB documents or React state. It receives plain structured data and returns a structured result.
 
 ---
 
 ## 9. Allocation Algorithms
 
-### Algorithm A — Existing allocation method
+### Algorithm A — Baseline (merit then lottery)
 
-This is the baseline.
-
-We must reproduce the official process exactly, including:
-- Student processing order.
-- CGPA priority.
-- Tie-breaking.
-- Preference handling.
-- Allocation rounds.
-- Course capacity and eligibility rules.
-
-We must not claim that a guessed greedy algorithm represents the existing system.
+The baseline follows the UG manual's procedure as far as the manual states it: per course, 70% of the seats go to students in CGPA order and 30% by a seeded lottery, using each student's priority list. The points the manual leaves open (equal CGPAs, how merit seats are served across several groups, lottery seats that stay unused) are project decisions listed in `docs/allocation-rules.md`. It is **not** a verified copy of the college's portal, and the project does not claim that it is.
 
 ### Algorithm B — Preference optimization
 
-The initial candidate is minimum-cost maximum-flow.
+Minimum-cost maximum-flow.
 
-Network:
-- Source to student-elective-group slots.
-- Student-group slots to eligible courses.
-- Courses to sink.
-
-Capacities:
-- One unit per required student-group slot.
-- One unit per student-course preference edge.
-- Course capacity on the course-to-sink edge.
-
-Cost:
-- Preference rank minus one on each student-to-course edge.
+Network: source to student; student to a (student, group) node with capacity 1; group node to each ranked course; courses to sink with the course capacity. Cost is the preference rank minus one on each student-to-course edge.
 
 Objective:
 1. Maximize the number of assigned slots.
-2. Among maximum-cardinality assignments, minimize total preference penalty.
+2. Among maximum-cardinality assignments, minimize total preference cost.
 
-This model supports course capacities and separate elective groups.
+Timetable clashes cannot be expressed in the flow, so they are handled by a best-first search with a deterministic work limit; if the limit stops it, the result is still valid and is flagged `optimal: false`.
 
-**Important limitation:** pure preference optimization does not automatically preserve strict CGPA precedence. The final formulation must explicitly enforce any mandatory institutional priority rules. If strict precedence is required, we must adapt the model rather than assume that a preference-only flow objective is sufficient.
-
-### Optional future extension
-
-If the first two algorithms work reliably, investigate a CGPA-aware or lexicographic optimization model. Add timetable, prerequisite, or room constraints only if the initial scope is complete and the constraints are genuinely required.
+**CGPA and the baseline.** A pure preference objective does not preserve CGPA precedence. By default the optimizer is therefore held to the baseline's own result (no student ends worse than under the baseline in any group), and CGPA decides only between results of equal preference cost. Strict CGPA order everywhere is not promised, because the baseline's lottery seats are protected. Details: `docs/algorithm-design.md`.
 
 ---
 
@@ -450,7 +385,7 @@ No experimental improvement figures should be invented. All reported results mus
 
 ## 12. Testing Strategy
 
-We will test:
+The tests cover:
 1. Cases where every student can receive their first choice.
 2. Oversubscribed courses.
 3. Multiple elective groups.
@@ -468,44 +403,17 @@ The algorithm must pass small hand-calculated tests before being used for large 
 
 ---
 
-## 13. Four-Week Prototype Plan
+## 13. Milestones
 
-### Week 1 — Requirements and baseline
-- Confirm the actual college allocation rules.
-- Document the mathematical problem and constraints.
-- Define the input/output contract.
-- Create synthetic sample data.
-- Implement and test the baseline algorithm.
-- Initialize the backend and frontend scaffolding.
-
-**Milestone:** validated baseline and agreed architecture.
-
-### Week 2 — End-to-end working prototype
-- Implement the optimization algorithm.
-- Complete input and allocation validation.
-- Implement preference submission and admin data import.
-- Integrate the allocation engine with the backend.
-- Display allocation results in the frontend.
-
-**Milestone:** the entire prototype works on synthetic data.
-
-### Week 3 — Experiments and robustness
-- Add evaluation metrics and result comparisons.
-- Test difficult allocation scenarios.
-- Generate reproducible datasets.
-- Fix integration and algorithm bugs.
-- Review the prototype with the professor or intended users.
-
-**Milestone:** stable prototype with measured results.
-
-### Week 4 — Presentation preparation
-- Freeze core features.
-- Run final benchmarks.
-- Prepare architecture diagrams and pseudocode.
-- Document results and limitations.
-- Rehearse the live demo and prepare a backup.
-
-**Milestone:** presentation-ready prototype and technical report.
+| Milestone | Status |
+|---|---|
+| Baseline algorithm and validator | Done |
+| Optimization algorithm (min-cost max-flow with timetable search) | Done |
+| Input and allocation validation, metrics and comparison | Done |
+| Backend API: accounts, data, preferences, runs, results, import, publishing | Done |
+| Frontend: student pages, admin dashboard, comparison views | Done, except semester and user-management screens |
+| Reproducible mock data at several sizes | Done (`backend/src/seed`) |
+| Experiments and results write-up | Partly: the benchmark script and generators exist; the write-up of results is not written |
 
 ---
 
@@ -555,7 +463,7 @@ This README is the shared project reference, but it is not a substitute for revi
 ## 16. Definition of Done
 
 The prototype is ready for presentation when:
-- The baseline matches the documented college rules.
+- The baseline follows the documented rules (`docs/allocation-rules.md`).
 - The optimization algorithm runs on the same input.
 - The independent validator detects invalid allocations.
 - The frontend and backend can complete the registration-to-allocation workflow.
@@ -567,17 +475,12 @@ The prototype is ready for presentation when:
 
 ---
 
-## 17. Current Status and Next Actions
+## 17. Current Status and Remaining Work
 
-**Current status (2026-11-01):** a working prototype. Both algorithms, the validator, the backend API and the web frontend exist and are tested (algorithm 162, backend 693, frontend 273 tests, all passing). The college's official rules are still **unconfirmed**; the IIT (ISM) UG manual was used as the reference for what is known (see `docs/allocation-rules.md`).
+**Current status (2026-11-08):** a working prototype. Both algorithms, the validator, the backend API and the web frontend exist and are tested (algorithm 162, backend 704, frontend 276 tests, all passing; the same three suites run in CI).
 
-**Implemented:** baseline (merit then lottery, default 70/30), min-cost max-flow optimizer with timetable-clash search and a deterministic search limit, held to the baseline's result (no student ends worse) and using CGPA, elective groups as independent priority lists of up to 15 choices drawing from one shared pool (one course per group, never the same course twice), compulsory courses as fixed timetable slots, independent validation, metrics and comparison, run storage with replay verification and publishing, CSV import, student preference and result pages.
+**Implemented:** baseline (merit then lottery, default 70/30); min-cost max-flow optimizer with timetable-clash search and a deterministic search limit, held to the baseline's result (no student ends worse) and using CGPA; elective groups as independent priority lists of up to 15 choices drawing from one shared pool (one course per group, never the same course twice); compulsory courses as fixed timetable slots; independent validation, metrics and comparison; run storage with replay verification and publishing; CSV import; student preference and result pages; a side-by-side, student-by-student comparison of the two algorithms; reproducible mock data at several sizes.
 
-**Not done yet:** strict CGPA order everywhere (the lottery and the floor keep some lower-CGPA winners), a second allocation round, minimum course size, department eligibility for electives, half-semester courses, semester/deadline and user-management screens, a repeatable benchmark and results chapter.
-
-### Next actions
-1. Confirm the open rules with the Academic Section (list in `docs/allocation-rules.md`, section 7).
-2. Decide how the optimizer should use CGPA.
-3. Build the remaining screens and the experiment write-up.
+**Not done:** strict CGPA order everywhere (the lottery and the floor keep some lower-CGPA winners), a second allocation round, minimum course size, department eligibility for electives, half-semester courses, semester/deadline and user-management screens (the API exists), and the write-up of experimental results.
 
 **The first priority is correctness and institutional applicability, followed by optimization, evaluation, and interface polish.**

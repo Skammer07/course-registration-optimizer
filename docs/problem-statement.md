@@ -1,6 +1,6 @@
 # Problem Statement
 
-*Draft for the team and project guide. The college's real rules are not yet confirmed; see `allocation-rules.md`. The full project charter is in the root `README.md`.*
+*Problem statement for the team and project guide. The college's real procedure is not available to the project, so the rules it follows and the decisions taken are in `allocation-rules.md`. The full project charter is in the root `README.md`.*
 
 ## Context
 
@@ -35,7 +35,7 @@ Design details are in `algorithm-design.md`; the HTTP interface is in `api-contr
 ## Constraints and assumptions
 
 - Real student data is not available. Experiments use deterministic generated mock data (allowed for this project).
-- The allocation policy is not confirmed. The two algorithms follow different policies (the baseline keeps merit/lottery quotas; the optimizer ignores the quotas but is held to the baseline's result and uses CGPA among equal results), so the comparison reports differences and **does not declare a winner**.
+- The college's official allocation procedure is not available, so the project follows the IIT (ISM) UG manual where it is explicit and states its own decisions elsewhere (`allocation-rules.md`). The two algorithms follow different policies (the baseline keeps merit/lottery quotas; the optimizer ignores the quotas but is held to the baseline's result and uses CGPA among equal results), so the comparison reports differences and **does not declare a winner**.
 - The system is a prototype and must not be presented as the official registration system.
 
 ## Scope
@@ -44,6 +44,6 @@ In scope: both algorithms, validation, metrics and comparison, the API (accounts
 
 Out of scope: replacing the official registration system, institute single sign-on, rooms and faculty constraints, production deployment.
 
-## Open questions for the college
+## Decisions and limits
 
-Listed in `allocation-rules.md`: how CGPA priority and ties work, whether there are allocation rounds, how many electives per group are required, how incomplete preference lists are handled, and any eligibility rules.
+The points that were open during the project, such as how equal CGPAs are ordered, whether every elective slot must be filled, how compulsory courses are supplied and whether the optimizer must reproduce the official procedure, are settled for the prototype and listed with their answers in `allocation-rules.md` (section 7). Rules the prototype does not model (a second allocation round, the 10-student minimum, eligibility, prerequisites, half-semester courses) are named there as out of scope.

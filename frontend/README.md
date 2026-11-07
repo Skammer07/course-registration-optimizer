@@ -11,7 +11,7 @@ React 19 · Vite · Tailwind CSS 4 · React Router · TanStack Query · Recharts
 | everyone | Sign in, change password | Cookie session. A temporary password forces the change before anything else. A session that ends (15 minutes) returns to sign-in with an explanation. |
 | admin, faculty | **Allocation runs** | History with filters (semester, status, algorithm), paging, live refresh of running runs. |
 | admin | **New run** | Pick the semester from a list of those that have data (the only or last-used one is preselected, and it warns if the semester is missing students, courses or preferences). Compare both algorithms or run one: merit/lottery split, seed, course limit, timetable check, and for the optimizer "Never leave a student worse off than the baseline" (on by default) and "Use CGPA to decide who gets the better choices" (on by default). Shows progress and can cancel a long run. |
-| admin, faculty | **Run page** (the comparison dashboard) | Overview (headline numbers, side-by-side chart, full metrics table, how each algorithm behaved), **Students** (search, filter, sort), **Courses** (seats filled, demand, who got what), **Details** (settings, inputs, validation). CSV export. |
+| admin, faculty | **Run page** (the comparison dashboard) | Overview (headline numbers, side-by-side chart, full metrics table, how each algorithm behaved), **Students** (a Baseline and an Optimized column for every student with an Improved / Worse / Same verdict, outlined courses where the two differ, and a filter for students whose courses differ), **Courses** (seats filled, demand, who got what), **Details** (settings, inputs, validation). CSV export. |
 | admin | Run actions | Publish (choose the algorithm, with the consequences spelled out), verify by replay, delete, cancel. The overview also shows **Compared with the baseline, student by student**: how many results are better, the same or worse, the average rank of the highest-CGPA fifth against everyone else, the worst rank, and the CGPA-priority violations of both algorithms. |
 | admin, faculty | **Courses** | Per semester: seats, how many students ranked each course (submitted lists), when it meets, with filters (including **Type**: elective or compulsory), sort, a weekly timetable that highlights overlapping classes, and add / edit. The form has a **Type** selector: a compulsory course takes departments instead of seats and an elective group, is not allocated, and is shown with a Compulsory badge. A warning appears when only some courses have times, because a run with the clash check is refused then. |
 | admin, faculty | **Students** | Per semester: who has submitted all, some or none of their preference lists (a badge per elective group), search and filters, add / edit. A student's page shows each ranked list with seats, demand and times. Faculty can change a name or department; marks, groups and active status are admin-only. |
@@ -70,7 +70,7 @@ src/
 ## Tests
 
 ```bash
-npm test             # 273 tests, about 15 seconds, no backend needed
+npm test             # 276 tests, about 15 seconds, no backend needed
 ```
 
 The tests drive the real screens against **responses captured from the real backend** (`src/test/fixtures`), so they stay faithful to the actual API. After you change an API response the frontend reads, refresh them and re-run:

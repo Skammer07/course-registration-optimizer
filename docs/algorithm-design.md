@@ -96,7 +96,7 @@ Each stored run keeps the normalized input snapshot, a fingerprint of it, the al
 
 ## 7. Measured performance
 
-Generated mock data (`backend/src/seed`), timetable checking on, `maxCoursesPerStudent` 2, one developer machine. Single runs, so indicative only.
+Generated mock data, timetable checking on, `maxCoursesPerStudent` 2, one developer machine. Single runs, so indicative only. Two generators exist in `backend/src/seed`: `generateDataset.js` (scenarios `balanced`, `scarce-seats`, `many-ties`, `many-clashes` and `open-electives`, loaded with `scripts/seed.js`) and `generateRealistic.js` (one semester of any size with its own 30 open electives, compulsory courses with per-department timetables, uneven seats and full submitted lists, loaded with `scripts/seed-realistic.js`; see the backend README). The tables below come from the first generator.
 
 | Optimizer, students | Before (earlier version) | Now |
 |---|---|---|
@@ -118,7 +118,7 @@ On a 200-student, 20-elective dataset (two separate groups of ten) where eight c
 - **Without the group rule**, the exact search did not finish in 120 s (6.5 s without the compulsory slots). With the default search limit the optimizer finished in 9.3 s with all 400 possible assignments, cost 330, and a proven lower bound of 324 (within 2 %).
 - **With one course per group (version 1.3.0 onward, the default)** the optimizer finished the exact search in 4.2 s and proved its result optimal (381 assignments, cost 402, average rank 2.06). The baseline (70/30, 0.06 s) gave 363 assignments, average rank 2.20. Students with a course in both groups: 181 (optimizer) against 163 (baseline); students missing a group: 19 against 37. No student held two courses of one group.
 
-Single runs on one machine. The optimizer ignores CGPA, so this is not yet a like-for-like comparison with the baseline.
+Single runs on one machine. These figures were taken before the optimizer was held to the baseline and given CGPA, so they are not a like-for-like comparison with the baseline; the next sections are.
 
 ### Held to the baseline (100 students, 20 courses; and 200 students, 25 courses)
 
@@ -171,5 +171,5 @@ These need decisions from the college and the team before the system can be desc
 
 **Open, no policy needed**
 - **Re-solve a branch from its parent's flow** instead of from scratch (cancel one path, repair, augment). With the shared pool each solve costs about 45 ms at 200 students, so the search proves optimality only on smaller inputs.
-- Encode identical-slot clash groups inside the flow network (removes much of the branching exactly), and re-solve a branch from its parent's flow instead of from scratch.
+- Encode identical-slot clash groups inside the flow network (removes much of the branching exactly).
 - A Dijkstra-with-potentials solver was tried and rejected: it was not faster on these graphs and it picks different equal-cost solutions, so results would no longer match earlier runs.

@@ -12,7 +12,7 @@
 
 | Requirement       | Version  |
 |-------------------|----------|
-| Node.js           | ≥ 20.0.0 |
+| Node.js           | ≥ 20.0.0 (the frontend needs ≥ 20.19) |
 | npm               | ≥ 10.x   |
 | MongoDB Atlas     | Free tier or above |
 
@@ -190,7 +190,7 @@ All endpoints return a consistent JSON envelope:
 | DELETE | `/api/v1/allocations/runs/:runId`          | 🔒 admin | Delete a never-published run and its assignments |
 | POST   | `/api/v1/allocations/runs/:runId/verify`   | 🔒 admin | Replay check against the stored snapshot, seed and ratios |
 | GET    | `/api/v1/allocations/runs/:runId/summary`  | 🔒 admin/faculty | Both algorithms side by side + differences, one call |
-| GET    | `/api/v1/allocations/runs/:runId/results/by-student` | 🔒 admin/faculty | One row per student (incl. unallocated), search/sort/paginate |
+| GET    | `/api/v1/allocations/runs/:runId/results/by-student` | 🔒 admin/faculty | One row per student (incl. unallocated), search/sort/paginate. For a run with both algorithms each row also carries the other algorithm's result and a `differs` flag, and `status=differs` / `same` filter on it |
 | GET    | `/api/v1/allocations/runs/:runId/results/by-course`  | 🔒 admin/faculty | One row per course: seats, utilization, demand |
 | POST   | `/api/v1/allocations/runs/:runId/publish`  | 🔒 admin | Publish selected algorithm's results |
 
@@ -284,7 +284,7 @@ The algorithm is invoked **outside** any MongoDB transaction so long-running com
 - **Student eligibility for elective groups:** If a student's `electiveGroups` array is empty, preferences for any group are accepted (assumption — official rule not documented in `docs/allocation-rules.md`).
 - **Input snapshot:** Each `AllocationRun` stores a full normalized snapshot of students, courses, preferences, and timetable data used during the run. This enables reproducible auditing independent of subsequent data changes.
 - `meritRatio: 0` (all seats by lottery) and `randomRatio: 0` (all seats by merit) are valid. Both must be finite, in `[0, 1]`, and sum to 1; this is enforced by the API (Zod) and again by the algorithm. Per course, the merit quota is `round(capacity * meritRatio)` and the lottery quota is the remainder, so the two always add up to the capacity.
-- See `docs/allocation-rules.md` for open questions that must be answered before institutional deployment.
+- See `docs/allocation-rules.md` for the rules the project follows, which of them come from the UG manual, and which points the college would still have to confirm before any institutional use.
 
 ---
 
@@ -299,7 +299,7 @@ The algorithm is invoked **outside** any MongoDB transaction so long-running com
 4. Repeating the same algorithm on a published run returns `200` without writes (idempotent). A different algorithm returns `409`; create a new run instead.
 5. **Crash recovery:** a process crash between steps 2 and 3 leaves the run in `publishing`. Publishes get `409` while the claim is younger than 5 minutes; after that the next publish request rolls the stale claim back (one winner, conditional update) and proceeds.
 
-**Not enforced** (the rule is unconfirmed or not built yet; see `docs/allocation-rules.md`): a guaranteed minimum of one course per group, per-group quotas, the 15-preference limit, prerequisites, reserved seats, CGPA priority in the optimizer, eligibility of electives by department/programme/academic year, a second allocation round, the 10-student minimum, courses with similar content, half-semester courses. An empty (zero-assignment) result is rejected since a valid zero-allocation publication is not defined.
+**Not enforced** (the rule is unconfirmed or not built; see `docs/allocation-rules.md`): a guaranteed minimum of one course per group, per-group quotas, prerequisites, reserved seats, strict CGPA order in every case, eligibility of electives by department/programme/academic year, a second allocation round, the 10-student minimum, courses with similar content, half-semester courses. An empty (zero-assignment) result is rejected since a valid zero-allocation publication is not defined.
 
 **Priority lists:** each group's list has at most 15 courses (best first). A *submitted* list must be full, 15 courses or every course the group can choose from when fewer exist; a draft may be shorter. The pool of a group is the open electives plus that group's own courses; compulsory courses cannot be ranked. CSV preference imports follow the same rules.
 
@@ -309,7 +309,7 @@ The algorithm is invoked **outside** any MongoDB transaction so long-running com
 
 **Timetable rules** (weekday, `HH:MM` with hour 00-23 / minute 00-59, start strictly before end) live in `src/utils/timetable.js` and are enforced by both the Zod schemas and the `Course` model (create and `runValidators` updates). A dotted-path update of a single slot field cannot check start < end at the model level; the course update API only replaces the whole `timetableSlots` array.
 
-**Reproducibility:** the stored snapshot (students, elective courses, preferences, timetable, each student's compulsory slots, configuration), `algorithmVersion` and `randomSeed` allow a run to be replayed with `POST /allocations/runs/:runId/verify`. The baseline is fully determined by the seed (`mulberry32` PRNG) and the optimizer is deterministic; its search limit counts solves, so the same input stops at the same point. Limits: replay needs the same `algorithmVersion` code; a run stopped by the 20-second time limit (rare) may not replay identically; runs stored before the group rule (version 1.3.0) replay without it; snapshots contain student CGPAs and are only returned by the admin/faculty `GET /runs/:runId` (list responses omit them).
+**Reproducibility:** the stored snapshot (students, elective courses, preferences, timetable, each student's compulsory slots, configuration), `algorithmVersion` and `randomSeed` allow a run to be replayed with `POST /allocations/runs/:runId/verify`. The baseline is fully determined by the seed (`mulberry32` PRNG) and the optimizer is deterministic; its search limit counts solves, so the same input stops at the same point. Limits: replay needs the same `algorithmVersion` code; a run stopped by the optimizer's 30-second time limit (rare) may not replay identically; runs stored before the group rule (version 1.3.0) replay without it; snapshots contain student CGPAs and are only returned by the admin/faculty `GET /runs/:runId` (list responses omit them).
 
 ---
 
@@ -340,9 +340,29 @@ npm run seed -- --scenario balanced --size small --semester SEM-SEED --seed 1 --
 | `--reset` | flag | first delete earlier seeded data of that semester (only records with the `SEED` / `SD-` prefix) |
 | `--users` | flag | also create `seedNNNN@seed.local` student logins; the password comes from `SEED_STUDENT_PASSWORD` or is generated and printed once |
 
-> **One seeded dataset per database.** Seeded student ids (`SEED0001`...) are unique across the whole database, so seeding a second semester into a database that already holds seeded data fails with a message naming the existing semester. Refresh that one with `--semester <that semester> --reset --users`, or use an empty database (set a database name in `MONGODB_URI`).
+### Realistic multi-semester data (`seed-realistic.js`)
 
-Generated data (except `open-electives`, described above): two elective groups (A, B), 3-10 courses per group, each student ranks up to 15 courses per group (skewed so some courses are popular), every list `submitted`. Then run `POST /allocations/run` once per algorithm and `GET /allocations/runs/compare`. The generator makes electives only; compulsory courses (`kind: "compulsory"` with `departments` and timetable slots) must be added separately, for example through the CSV import. Group sizes, capacities and clash rates are **test assumptions, not institutional rules**.
+For dashboards and for testing at different sizes there is a second generator, `src/seed/generateRealistic.js`, loaded with `scripts/seed-realistic.js`. Each semester gets its **own** 30 open electives (`Course1` / `C1`, then `Course31` / `C31` and so on), 12 compulsory courses with fixed per-department timetables, and students named `Student0001` with id `IITISM0001`. Student ids are unique across the database, so the numbering continues from one semester to the next. Every student submits full 15-choice lists for OE1 and OE2. Seats are deliberately tight and uneven, so some students end with one course; this is mock data, not institutional data.
+
+```bash
+# from backend/ : load three semesters (500, 1000 and 1500 students) into an empty database
+node scripts/seed-realistic.js --semesters SEM-1:500,SEM-2:1000,SEM-3:1500 --seed 11
+
+# clear everything except admin/faculty accounts first (a JSON backup is written before anything is deleted)
+node scripts/seed-realistic.js --semesters SEM-1:500 --wipe --backup ../data/backups/mybackup --yes
+
+# add one more semester without a wipe: tell it how many students / courses already exist
+node scripts/seed-realistic.js --semesters SEM-2:1000:1.04 --student-offset 500 --course-offset 30 --compulsory-offset 12
+
+# reload only one semester (its students, courses, lists, logins and runs), keeping the others
+node scripts/seed-realistic.js --semesters SEM-2:1000:1.04 --student-offset 500 --course-offset 30 --compulsory-offset 12 --replace --backup ../data/backups/sem2 --yes
+```
+
+`--semesters` takes `<id>:<students>[:<seatFactor>]`; seats for the open electives are `students x 2 x seatFactor` (the default factor falls from 0.95 to 0.75 as the semester gets bigger). Logins are `iitism0001@seed.local` and so on, with the password from `SEED_STUDENT_PASSWORD` or one generated and printed once. `--wipe` and `--replace` need `--backup <folder>` and `--yes`; the backup folder is git-ignored because it contains password hashes. Like `seed.js`, it refuses `NODE_ENV=production`.
+
+> **One seeded dataset per database (`seed.js` only).** Seeded student ids (`SEED0001`...) are unique across the whole database, so seeding a second semester into a database that already holds seeded data fails with a message naming the existing semester. Refresh that one with `--semester <that semester> --reset --users`, or use an empty database (set a database name in `MONGODB_URI`).
+
+Generated data (except `open-electives`, described above): two elective groups (A, B), 3-10 courses per group, each student ranks up to 15 courses per group (skewed so some courses are popular), every list `submitted`. Then run `POST /allocations/run` once per algorithm and `GET /allocations/runs/compare`. This first generator makes electives only; compulsory courses (`kind: "compulsory"` with `departments` and timetable slots) must be added separately, for example through the CSV import (`seed-realistic.js` creates them). Group sizes, capacities and clash rates are **test assumptions, not institutional rules**.
 
 ### Runtime protections and tracing
 
@@ -373,7 +393,7 @@ npm run test:watch
 cd ../algorithm && npm ci && npm test
 ```
 
-Current results (2026-11-01): **backend 36 test files, 693 tests; algorithm 20 test files, 162 tests; frontend 17 test files, 273 tests**, all passing. They run without a `.env` file, and the same three suites run in CI (`.github/workflows/ci.yml`, Node 20 and 22; the frontend job also builds) on every push and pull request to `main`. The frontend tests wait up to one second for a screen, so on a heavily loaded machine a few may fail by timing alone; they pass when re-run.
+Current results (2026-11-08): **backend 37 test files, 704 tests; algorithm 20 test files, 162 tests; frontend 17 test files, 276 tests**, all passing. They run without a `.env` file, and the same three suites run in CI (`.github/workflows/ci.yml`, Node 20 and 22; the frontend job also builds) on every push and pull request to `main`. The frontend tests wait up to five seconds for a screen (and 15 seconds per test), which keeps them stable on a slow machine or a shared CI runner.
 
 ### Real-database end-to-end check (manual)
 
