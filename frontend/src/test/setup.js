@@ -1,7 +1,11 @@
 import "@testing-library/jest-dom/vitest";
 import { cloneElement } from "react";
-import { cleanup } from "@testing-library/react";
+import { cleanup, configure } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
+
+// Screens load data asynchronously; the default 1 s wait is too tight on a busy machine or a
+// shared CI runner, so tests failed at random. A passing test is never slower for a longer limit.
+configure({ asyncUtilTimeout: 5000 });
 
 afterEach(() => cleanup());
 

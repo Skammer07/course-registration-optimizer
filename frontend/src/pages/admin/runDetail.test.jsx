@@ -377,13 +377,36 @@ describe("students tab", () => {
       extra: byStudent({ students, compare: { available: true, otherAlgorithm: "optimized", differing: 1, total: 2 } }),
     });
     const table = await screen.findByRole("table", { name: /Students and the courses they were given/ });
-    expect(screen.getByRole("status")).toHaveTextContent(/1 of 2 students get different courses under Optimized than under Baseline/);
+    expect(screen.getByRole("status")).toHaveTextContent(/1 of 2 students get different courses/);
+    // one column per algorithm; there is no separate algorithm switch on this tab
+    expect(within(table).getByRole("columnheader", { name: /^Baseline.*choice rank/ })).toBeInTheDocument();
+    expect(within(table).getByRole("columnheader", { name: /^Optimized.*choice rank/ })).toBeInTheDocument();
     const rows = within(table).getAllByRole("row");
-    expect(rows[1]).toHaveTextContent("Differs");
-    expect(rows[1]).toHaveTextContent(/Optimized\s*gives\s*ZZ-9/);
+    expect(rows[1]).toHaveTextContent("ZZ-9");
+    expect(rows[1]).toHaveTextContent("Worse");
     expect(rows[2]).toHaveTextContent("Same");
-    expect(rows[2]).not.toHaveTextContent("gives");
     expect(screen.getByRole("option", { name: "Different in the two algorithms" })).toBeInTheDocument();
+    expect(screen.queryByRole("radiogroup", { name: "Algorithm" })).not.toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Sort: best average rank · Optimized" })).toBeInTheDocument();
+  });
+
+  it("says whether the optimizer's result is better or worse for each student", async () => {
+    const data = fixture("by-student").data;
+    const [a, b] = data.students;
+    const one = (code, rank) => ({ courseCode: code, title: code, electiveGroup: "A", preferenceRank: rank, phase: null, iteration: null });
+    const students = [
+      // baseline 4.00 -> optimized 1.00: improved
+      { ...a, courses: [one("B-1", 4)], coursesAllocated: 1, averageRank: 4, differs: true, other: { algorithm: "optimized", courses: [one("O-1", 1)], coursesAllocated: 1, averageRank: 1 } },
+      // baseline 1 course -> optimized none: worse
+      { ...b, courses: [one("B-2", 1)], coursesAllocated: 1, averageRank: 1, differs: true, other: { algorithm: "optimized", courses: [], coursesAllocated: 0, averageRank: null } },
+    ];
+    openRun({ tab: "students", alg: "baseline", extra: byStudent({ students, compare: { available: true, otherAlgorithm: "optimized", differing: 2, total: 2 } }) });
+    const table = await screen.findByRole("table", { name: /Students and the courses they were given/ });
+    const rows = within(table).getAllByRole("row");
+    expect(rows[1]).toHaveTextContent("Improved");
+    expect(rows[1]).toHaveTextContent("avg rank 4.00 → 1.00");
+    expect(rows[2]).toHaveTextContent("Worse");
+    expect(rows[2]).toHaveTextContent("1 → 0 courses");
   });
 
   it("marks students who got nothing, instead of leaving a blank", async () => {
@@ -396,14 +419,12 @@ describe("students tab", () => {
     expect(row).toHaveTextContent("No course");
   });
 
-  it("defaults to the published algorithm and lets the admin switch", async () => {
+  it("uses the published algorithm by default, and an algorithm-specific sort switches to that algorithm", async () => {
     const { events, ...mock } = openRun({ summary: summaryOf("summary-published"), tab: "students", extra: byStudent() });
     await screen.findByRole("table");
     expect(last(mock).query.algorithm).toBe("baseline");
-    const picker = screen.getByRole("radiogroup", { name: "Algorithm" });
-    expect(within(picker).getByRole("radio", { name: "Baseline · published" })).toHaveAttribute("aria-checked", "true");
-    await events.click(within(picker).getByRole("radio", { name: "Optimized" }));
-    await waitFor(() => expect(last(mock).query.algorithm).toBe("optimized"));
+    await events.selectOptions(screen.getByLabelText("Sort by"), "averageRank@optimized");
+    await waitFor(() => expect(last(mock).query).toMatchObject({ algorithm: "optimized", sort: "averageRank" }));
   });
 
   it("searches after the typing pauses, and filters and sorts on the server", async () => {
@@ -412,10 +433,10 @@ describe("students tab", () => {
     await events.type(screen.getByRole("searchbox", { name: "Search students" }), "ravi");
     await waitFor(() => expect(last(mock).query.search).toBe("ravi"));
 
-    await events.selectOptions(screen.getByLabelText("Show"), "unallocated");
-    await waitFor(() => expect(last(mock).query.status).toBe("unallocated"));
+    await events.selectOptions(screen.getByLabelText("Show"), "differs");
+    await waitFor(() => expect(last(mock).query.status).toBe("differs"));
     await events.selectOptions(screen.getByLabelText("Sort by"), "cgpa");
-    await waitFor(() => expect(last(mock).query).toMatchObject({ search: "ravi", status: "unallocated", sort: "cgpa", page: "1" }));
+    await waitFor(() => expect(last(mock).query).toMatchObject({ search: "ravi", status: "differs", sort: "cgpa", page: "1" }));
   });
 
   it("says when nothing matches the filter", async () => {

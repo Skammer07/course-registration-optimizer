@@ -15,6 +15,7 @@ import { useDebounced } from "../../lib/hooks.js";
 import { CourseChip } from "./CourseChip.jsx";
 
 const PAGE_SIZE = 25;
+const ORDER = ["baseline", "optimized"];
 
 const courseKey = (c) => `${c.electiveGroup ?? ""}|${c.courseCode}`;
 
@@ -28,36 +29,78 @@ function AlgorithmName({ algorithm }) {
   );
 }
 
-/** What the other algorithm gave this student, shown only where the two results differ. */
-function OtherResult({ other }) {
+/** The student's result under each algorithm, whichever one the page is currently sorting by. */
+function sidesOf(student, viewed) {
+  const mine = { courses: student.courses, count: student.coursesAllocated, avg: student.averageRank };
+  const theirs = { courses: student.other.courses, count: student.other.coursesAllocated, avg: student.other.averageRank };
+  return { [viewed]: mine, [student.other.algorithm]: theirs };
+}
+
+/**
+ * How the optimizer's result compares with the baseline's for one student: more courses is
+ * better; with the same number of courses, a lower average rank is better.
+ */
+function verdictFor(student, sides) {
+  if (!student.differs) return { tone: "neutral", icon: "check", label: "Same", detail: "Identical courses" };
+  const b = sides.baseline;
+  const o = sides.optimized;
+  const rankText = b.avg !== null || o.avg !== null ? `avg rank ${b.avg === null ? "–" : formatFixed(b.avg, 2)} → ${o.avg === null ? "–" : formatFixed(o.avg, 2)}` : "";
+  if (o.count !== b.count) {
+    const text = `${b.count} → ${o.count} course${o.count === 1 ? "" : "s"}`;
+    return o.count > b.count
+      ? { tone: "good", icon: "check", label: "Improved", detail: text }
+      : { tone: "critical", icon: "alert", label: "Worse", detail: text };
+  }
+  if (b.avg !== null && o.avg !== null && b.avg !== o.avg) {
+    return o.avg < b.avg
+      ? { tone: "good", icon: "check", label: "Improved", detail: rankText }
+      : { tone: "critical", icon: "alert", label: "Worse", detail: rankText };
+  }
+  return { tone: "warning", icon: "info", label: "Different courses", detail: rankText ? `${rankText} (equal)` : "Same rank" };
+}
+
+/** One algorithm's courses for a student. A course with an outline is one the other side did not give. */
+function ResultCell({ side, otherSide }) {
+  if (side.courses.length === 0) return <span className="text-sm text-ink-3">No course</span>;
+  const otherKeys = new Set(otherSide.courses.map(courseKey));
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-dashed border-line pt-2 text-xs text-ink-3">
-      <AlgorithmName algorithm={other.algorithm} />
-      <span>gives</span>
-      {other.courses.length === 0 ? (
-        <span>no course</span>
-      ) : (
-        other.courses.map((c) => <CourseChip key={courseKey(c)} course={c} />)
-      )}
-      {other.averageRank !== null ? <span className="tabular">(avg rank {formatFixed(other.averageRank, 2)})</span> : null}
+    <div className="flex flex-wrap gap-1.5">
+      {side.courses.map((c) => <CourseChip key={courseKey(c)} course={c} differs={!otherKeys.has(courseKey(c))} />)}
     </div>
   );
 }
 
+/** Column heading for one algorithm: its colour and its name. */
+function AlgorithmHeading({ algorithm }) {
+  return (
+    <th scope="col" className={cn(thClass, "min-w-56")} style={{ boxShadow: `inset 0 3px 0 ${ALGORITHM_META[algorithm].color}` }}>
+      <span className="flex items-center gap-2 pt-1 normal-case tracking-normal">
+        <AlgorithmName algorithm={algorithm} />
+        <span className="text-xs font-normal text-ink-3">· courses (number = choice rank)</span>
+      </span>
+    </th>
+  );
+}
+
 /** One row per student, including the ones who got nothing. */
-export function StudentsTab({ runId, algorithm }) {
+export function StudentsTab({ runId, algorithm: defaultAlgorithm, comparable = false }) {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("all");
   const [sort, setSort] = useState("studentId");
   const [page, setPage] = useState(1);
   const debounced = useDebounced(search);
 
+  // With both algorithms on screen there is no "which one" switch: the algorithm-specific sorts
+  // are written "averageRank@optimized", and everything else works on all students.
+  const [sortKey, sortAlgorithm] = sort.split("@");
+  const algorithm = sortAlgorithm ?? defaultAlgorithm;
+
   // a new filter or algorithm always starts again from the first page
   useEffect(() => setPage(1), [algorithm, debounced, status, sort]);
 
   const query = useQuery({
-    queryKey: ["runs", runId, "students", { algorithm, search: debounced, status, sort, page }],
-    queryFn: () => getResultsByStudent(runId, { algorithm, search: debounced, status, sort, page, limit: PAGE_SIZE }),
+    queryKey: ["runs", runId, "students", { algorithm, search: debounced, status, sort: sortKey, page }],
+    queryFn: () => getResultsByStudent(runId, { algorithm, search: debounced, status, sort: sortKey, page, limit: PAGE_SIZE }),
     placeholderData: keepPreviousData,
   });
   const data = query.data;
@@ -75,25 +118,42 @@ export function StudentsTab({ runId, algorithm }) {
         </label>
         <FilterSelect label="Show" value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="all">All students</option>
-          <option value="allocated">With a course</option>
-          <option value="unallocated">Without a course</option>
-          {comparing ? <option value="differs">Different in the two algorithms</option> : null}
-          {comparing ? <option value="same">Same in both</option> : null}
+          {comparable ? (
+            <>
+              <option value="differs">Different in the two algorithms</option>
+              <option value="same">Same in both</option>
+            </>
+          ) : (
+            <>
+              <option value="allocated">With a course</option>
+              <option value="unallocated">Without a course</option>
+            </>
+          )}
         </FilterSelect>
         <FilterSelect label="Sort by" value={sort} onChange={(e) => setSort(e.target.value)}>
           <option value="studentId">Sort: student id</option>
           <option value="name">Sort: name</option>
           <option value="cgpa">Sort: CGPA (high first)</option>
-          <option value="coursesAllocated">Sort: most courses</option>
-          <option value="averageRank">Sort: best average rank</option>
+          {comparable ? (
+            ORDER.map((a) => (
+              <optgroup key={a} label={ALGORITHM_META[a].label}>
+                <option value={`averageRank@${a}`}>Sort: best average rank · {ALGORITHM_META[a].label}</option>
+                <option value={`coursesAllocated@${a}`}>Sort: most courses · {ALGORITHM_META[a].label}</option>
+              </optgroup>
+            ))
+          ) : (
+            <>
+              <option value="coursesAllocated">Sort: most courses</option>
+              <option value="averageRank">Sort: best average rank</option>
+            </>
+          )}
         </FilterSelect>
       </div>
 
       {comparing ? (
         <p className="rounded-lg bg-wash px-3 py-2 text-sm text-ink-2" role="status">
-          <span className="font-semibold text-ink tabular">{compare.differing}</span> of <span className="tabular">{compare.total}</span> students get
-          different courses under <AlgorithmName algorithm={compare.otherAlgorithm} /> than under <AlgorithmName algorithm={algorithm} />.
-          {compare.differing > 0 ? " A course with an outline is one the other algorithm did not give that student." : ""}
+          <span className="tabular font-semibold text-ink">{compare.differing}</span> of <span className="tabular">{compare.total}</span> students get different courses
+          under the two algorithms. A course with an outline is one the other algorithm did not give that student.
         </p>
       ) : null}
 
@@ -113,45 +173,71 @@ export function StudentsTab({ runId, algorithm }) {
                   <tr>
                     <th scope="col" className={thClass}>Student</th>
                     <th scope="col" className={cn(thClass, "text-right")}>CGPA</th>
-                    <th scope="col" className={thClass}>Courses given (number = choice rank)</th>
-                    <th scope="col" className={cn(thClass, "text-right")}>Avg rank</th>
-                    <th scope="col" className={thClass}>Result</th>
+                    {comparing ? (
+                      <>
+                        {ORDER.map((a) => <AlgorithmHeading key={a} algorithm={a} />)}
+                        <th scope="col" className={thClass}>Optimized vs Baseline</th>
+                      </>
+                    ) : (
+                      <>
+                        <th scope="col" className={thClass}>Courses given (number = choice rank)</th>
+                        <th scope="col" className={cn(thClass, "text-right")}>Avg rank</th>
+                        <th scope="col" className={thClass}>Result</th>
+                      </>
+                    )}
                   </tr>
                 </thead>
                 <tbody>
-                  {data.students.map((s) => (
-                    <tr key={s.studentId}>
-                      <th scope="row" className={cn(tdClass, "font-normal")}>
-                        <span className="font-medium text-ink">{s.name}</span>
-                        <span className="block text-xs text-ink-3">{s.studentId}</span>
-                      </th>
-                      <td className={cn(tdClass, "tabular text-right")}>{formatFixed(s.cgpa, 2)}</td>
-                      <td className={tdClass}>
-                        {s.courses.length === 0 ? (
-                          <span className="text-ink-3">None</span>
-                        ) : (
-                          <div className="flex flex-wrap gap-1.5">
-                            {s.courses.map((c) => (
-                              <CourseChip key={c.courseCode} course={c} differs={s.differs && !s.other.courses.some((o) => courseKey(o) === courseKey(c))} />
-                            ))}
-                          </div>
-                        )}
-                        {s.differs ? <OtherResult other={s.other} /> : null}
-                      </td>
-                      <td className={cn(tdClass, "tabular text-right")}>{s.averageRank === null ? "–" : formatFixed(s.averageRank, 2)}</td>
-                      <td className={tdClass}>
+                  {data.students.map((s) => {
+                    const sides = comparing ? sidesOf(s, algorithm) : null;
+                    const verdict = comparing ? verdictFor(s, sides) : null;
+                    return (
+                      <tr key={s.studentId} className={comparing && s.differs ? "bg-warning-soft/30" : undefined}>
+                        <th scope="row" className={cn(tdClass, "font-normal")}>
+                          <span className="font-medium text-ink">{s.name}</span>
+                          <span className="block text-xs text-ink-3">{s.studentId}</span>
+                        </th>
+                        <td className={cn(tdClass, "tabular text-right")}>{formatFixed(s.cgpa, 2)}</td>
                         {comparing ? (
-                          s.differs ? <Badge tone="warning" icon="alert" className="mb-1">Differs</Badge> : <Badge tone="neutral" icon="check" className="mb-1">Same</Badge>
-                        ) : null}
-                        <br className={comparing ? undefined : "hidden"} />
-                        {s.status === "allocated" ? (
-                          <Badge tone="neutral" icon="check">{s.coursesAllocated} course{s.coursesAllocated === 1 ? "" : "s"}</Badge>
+                          <>
+                            {ORDER.map((a) => (
+                              <td key={a} className={tdClass}>
+                                <ResultCell side={sides[a]} otherSide={sides[a === "baseline" ? "optimized" : "baseline"]} />
+                                <span className="tabular mt-1 block text-xs text-ink-3">
+                                  {sides[a].count} course{sides[a].count === 1 ? "" : "s"}
+                                  {sides[a].avg !== null ? ` · avg rank ${formatFixed(sides[a].avg, 2)}` : ""}
+                                </span>
+                              </td>
+                            ))}
+                            <td className={tdClass}>
+                              <Badge tone={verdict.tone} icon={verdict.icon}>{verdict.label}</Badge>
+                              <span className="tabular mt-1 block text-xs text-ink-3">{verdict.detail}</span>
+                            </td>
+                          </>
                         ) : (
-                          <Badge tone="warning" icon="alert">No course</Badge>
+                          <>
+                            <td className={tdClass}>
+                              {s.courses.length === 0 ? (
+                                <span className="text-ink-3">None</span>
+                              ) : (
+                                <div className="flex flex-wrap gap-1.5">
+                                  {s.courses.map((c) => <CourseChip key={c.courseCode} course={c} />)}
+                                </div>
+                              )}
+                            </td>
+                            <td className={cn(tdClass, "tabular text-right")}>{s.averageRank === null ? "–" : formatFixed(s.averageRank, 2)}</td>
+                            <td className={tdClass}>
+                              {s.status === "allocated" ? (
+                                <Badge tone="neutral" icon="check">{s.coursesAllocated} course{s.coursesAllocated === 1 ? "" : "s"}</Badge>
+                              ) : (
+                                <Badge tone="warning" icon="alert">No course</Badge>
+                              )}
+                            </td>
+                          </>
                         )}
-                      </td>
-                    </tr>
-                  ))}
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

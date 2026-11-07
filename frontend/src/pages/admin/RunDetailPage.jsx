@@ -109,7 +109,7 @@ export function RunDetailPage() {
     ...(hasResults ? [{ value: "students", label: "Students" }, { value: "courses", label: "Courses" }] : []),
     { value: "details", label: "Details" },
   ];
-  const showAlgorithmPicker = hasResults && present.length > 1 && (tab === "students" || tab === "courses");
+  const showAlgorithmPicker = hasResults && present.length > 1 && tab === "courses";
 
   const canPublish = isAdmin && run.status === "completed" && publishable(summary).length > 0;
 
@@ -180,7 +180,7 @@ export function RunDetailPage() {
             <EmptyState icon="info" title="No results to show" description="This run did not produce results. The Details tab explains why." />
           )
         ) : null}
-        {tab === "students" ? <StudentsTab runId={runId} algorithm={algorithm} /> : null}
+        {tab === "students" ? <StudentsTab runId={runId} algorithm={algorithm} comparable={present.length > 1} /> : null}
         {tab === "courses" ? <CoursesTab runId={runId} algorithm={algorithm} /> : null}
         {tab === "details" ? <DetailsTab summary={summary} /> : null}
       </div>
