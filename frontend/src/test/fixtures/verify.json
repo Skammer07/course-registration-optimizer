@@ -1,0 +1,36 @@
+{
+  "success": true,
+  "message": "Replay matches the stored results",
+  "data": {
+    "runId": "6ae474d01342cfebe81a0a17",
+    "results": [
+      {
+        "algorithm": "baseline",
+        "matches": true,
+        "storedCount": 34,
+        "replayedCount": 34,
+        "onlyInStored": [],
+        "onlyInReplay": [],
+        "storedVersion": "1.1.0",
+        "currentVersion": "1.1.0",
+        "sameVersion": true,
+        "seed": 7,
+        "note": null
+      },
+      {
+        "algorithm": "optimized",
+        "matches": true,
+        "storedCount": 39,
+        "replayedCount": 39,
+        "onlyInStored": [],
+        "onlyInReplay": [],
+        "storedVersion": "1.1.0",
+        "currentVersion": "1.1.0",
+        "sameVersion": true,
+        "seed": null,
+        "note": null
+      }
+    ],
+    "allMatch": true
+  }
+}

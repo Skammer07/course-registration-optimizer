@@ -1,0 +1,24 @@
+{
+  "success": true,
+  "message": "Your allocation results retrieved",
+  "data": {
+    "student": {
+      "studentId": "SEED0001",
+      "name": "Seed Student 0001"
+    },
+    "semesterId": "SEM-FX",
+    "published": true,
+    "run": {
+      "id": "6ae474d01342cfebe81a0a17",
+      "semesterId": "SEM-FX",
+      "algorithm": "baseline",
+      "publishedAt": "2026-10-30T10:43:30.241Z"
+    },
+    "assignments": [],
+    "summary": {
+      "coursesAllocated": 0,
+      "maxCoursesPerStudent": 2,
+      "message": "No course was allocated to you in this run."
+    }
+  }
+}

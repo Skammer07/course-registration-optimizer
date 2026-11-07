@@ -1,0 +1,18 @@
+{
+  "success": true,
+  "message": "Logged in successfully",
+  "data": {
+    "user": {
+      "_id": "6ae474ce1342cfebe81a09ff",
+      "email": "student@example.edu",
+      "role": "student",
+      "student": "6ae474cd1342cfebe81a098b",
+      "isActive": true,
+      "mustChangePassword": false,
+      "passwordChangedAt": null,
+      "createdAt": "2026-10-30T10:43:26.381Z",
+      "updatedAt": "2026-10-30T10:43:26.381Z",
+      "__v": 0
+    }
+  }
+}

@@ -1,0 +1,381 @@
+{
+  "success": true,
+  "message": "Results by course retrieved",
+  "data": {
+    "runId": "6ae474d01342cfebe81a0a17",
+    "algorithm": "baseline",
+    "snapshotAvailable": true,
+    "courses": [
+      {
+        "courseCode": "SD-A1",
+        "title": "Seed A1",
+        "electiveGroup": "A",
+        "capacity": 4,
+        "assignedCount": 4,
+        "seatsRemaining": 0,
+        "utilization": 1,
+        "demand": 27,
+        "byPhase": {
+          "merit": 3,
+          "random": 1
+        },
+        "students": [
+          {
+            "studentId": "SEED0005",
+            "name": "Seed Student 0005",
+            "preferenceRank": 1,
+            "phase": "merit",
+            "iteration": 1
+          },
+          {
+            "studentId": "SEED0023",
+            "name": "Seed Student 0023",
+            "preferenceRank": 1,
+            "phase": "merit",
+            "iteration": 1
+          },
+          {
+            "studentId": "SEED0025",
+            "name": "Seed Student 0025",
+            "preferenceRank": 1,
+            "phase": "merit",
+            "iteration": 1
+          },
+          {
+            "studentId": "SEED0008",
+            "name": "Seed Student 0008",
+            "preferenceRank": 2,
+            "phase": "random",
+            "iteration": null
+          }
+        ]
+      },
+      {
+        "courseCode": "SD-A2",
+        "title": "Seed A2",
+        "electiveGroup": "A",
+        "capacity": 4,
+        "assignedCount": 4,
+        "seatsRemaining": 0,
+        "utilization": 1,
+        "demand": 20,
+        "byPhase": {
+          "merit": 3,
+          "random": 1
+        },
+        "students": [
+          {
+            "studentId": "SEED0014",
+            "name": "Seed Student 0014",
+            "preferenceRank": 1,
+            "phase": "merit",
+            "iteration": 1
+          },
+          {
+            "studentId": "SEED0027",
+            "name": "Seed Student 0027",
+            "preferenceRank": 1,
+            "phase": "merit",
+            "iteration": 1
+          },
+          {
+            "studentId": "SEED0028",
+            "name": "Seed Student 0028",
+            "preferenceRank": 1,
+            "phase": "merit",
+            "iteration": 1
+          },
+          {
+            "studentId": "SEED0018",
+            "name": "Seed Student 0018",
+            "preferenceRank": 3,
+            "phase": "random",
+            "iteration": null
+          }
+        ]
+      },
+      {
+        "courseCode": "SD-A3",
+        "title": "Seed A3",
+        "electiveGroup": "A",
+        "capacity": 4,
+        "assignedCount": 4,
+        "seatsRemaining": 0,
+        "utilization": 1,
+        "demand": 19,
+        "byPhase": {
+          "merit": 3,
+          "random": 1
+        },
+        "students": [
+          {
+            "studentId": "SEED0002",
+            "name": "Seed Student 0002",
+            "preferenceRank": 1,
+            "phase": "merit",
+            "iteration": 1
+          },
+          {
+            "studentId": "SEED0007",
+            "name": "Seed Student 0007",
+            "preferenceRank": 1,
+            "phase": "random",
+            "iteration": null
+          },
+          {
+            "studentId": "SEED0018",
+            "name": "Seed Student 0018",
+            "preferenceRank": 1,
+            "phase": "merit",
+            "iteration": 1
+          },
+          {
+            "studentId": "SEED0022",
+            "name": "Seed Student 0022",
+            "preferenceRank": 1,
+            "phase": "merit",
+            "iteration": 1
+          }
+        ]
+      },
+      {
+        "courseCode": "SD-A4",
+        "title": "Seed A4",
+        "electiveGroup": "A",
+        "capacity": 5,
+        "assignedCount": 4,
+        "seatsRemaining": 1,
+        "utilization": 0.8,
+        "demand": 19,
+        "byPhase": {
+          "merit": 3,
+          "random": 1
+        },
+        "students": [
+          {
+            "studentId": "SEED0009",
+            "name": "Seed Student 0009",
+            "preferenceRank": 1,
+            "phase": "merit",
+            "iteration": 1
+          },
+          {
+            "studentId": "SEED0024",
+            "name": "Seed Student 0024",
+            "preferenceRank": 1,
+            "phase": "merit",
+            "iteration": 1
+          },
+          {
+            "studentId": "SEED0030",
+            "name": "Seed Student 0030",
+            "preferenceRank": 1,
+            "phase": "merit",
+            "iteration": 1
+          },
+          {
+            "studentId": "SEED0010",
+            "name": "Seed Student 0010",
+            "preferenceRank": 2,
+            "phase": "random",
+            "iteration": null
+          }
+        ]
+      },
+      {
+        "courseCode": "SD-B1",
+        "title": "Seed B1",
+        "electiveGroup": "B",
+        "capacity": 5,
+        "assignedCount": 4,
+        "seatsRemaining": 1,
+        "utilization": 0.8,
+        "demand": 27,
+        "byPhase": {
+          "merit": 3,
+          "random": 1
+        },
+        "students": [
+          {
+            "studentId": "SEED0010",
+            "name": "Seed Student 0010",
+            "preferenceRank": 1,
+            "phase": "merit",
+            "iteration": 1
+          },
+          {
+            "studentId": "SEED0013",
+            "name": "Seed Student 0013",
+            "preferenceRank": 1,
+            "phase": "merit",
+            "iteration": 1
+          },
+          {
+            "studentId": "SEED0017",
+            "name": "Seed Student 0017",
+            "preferenceRank": 1,
+            "phase": "merit",
+            "iteration": 1
+          },
+          {
+            "studentId": "SEED0014",
+            "name": "Seed Student 0014",
+            "preferenceRank": 2,
+            "phase": "random",
+            "iteration": null
+          }
+        ]
+      },
+      {
+        "courseCode": "SD-B2",
+        "title": "Seed B2",
+        "electiveGroup": "B",
+        "capacity": 5,
+        "assignedCount": 4,
+        "seatsRemaining": 1,
+        "utilization": 0.8,
+        "demand": 24,
+        "byPhase": {
+          "merit": 3,
+          "random": 1
+        },
+        "students": [
+          {
+            "studentId": "SEED0008",
+            "name": "Seed Student 0008",
+            "preferenceRank": 1,
+            "phase": "merit",
+            "iteration": 1
+          },
+          {
+            "studentId": "SEED0020",
+            "name": "Seed Student 0020",
+            "preferenceRank": 2,
+            "phase": "merit",
+            "iteration": 1
+          },
+          {
+            "studentId": "SEED0021",
+            "name": "Seed Student 0021",
+            "preferenceRank": 2,
+            "phase": "merit",
+            "iteration": 1
+          },
+          {
+            "studentId": "SEED0003",
+            "name": "Seed Student 0003",
+            "preferenceRank": 3,
+            "phase": "random",
+            "iteration": null
+          }
+        ]
+      },
+      {
+        "courseCode": "SD-B3",
+        "title": "Seed B3",
+        "electiveGroup": "B",
+        "capacity": 6,
+        "assignedCount": 5,
+        "seatsRemaining": 1,
+        "utilization": 0.8333,
+        "demand": 22,
+        "byPhase": {
+          "merit": 4,
+          "random": 1
+        },
+        "students": [
+          {
+            "studentId": "SEED0003",
+            "name": "Seed Student 0003",
+            "preferenceRank": 1,
+            "phase": "merit",
+            "iteration": 1
+          },
+          {
+            "studentId": "SEED0019",
+            "name": "Seed Student 0019",
+            "preferenceRank": 1,
+            "phase": "merit",
+            "iteration": 1
+          },
+          {
+            "studentId": "SEED0026",
+            "name": "Seed Student 0026",
+            "preferenceRank": 1,
+            "phase": "merit",
+            "iteration": 1
+          },
+          {
+            "studentId": "SEED0029",
+            "name": "Seed Student 0029",
+            "preferenceRank": 1,
+            "phase": "merit",
+            "iteration": 1
+          },
+          {
+            "studentId": "SEED0024",
+            "name": "Seed Student 0024",
+            "preferenceRank": 3,
+            "phase": "random",
+            "iteration": null
+          }
+        ]
+      },
+      {
+        "courseCode": "SD-B4",
+        "title": "Seed B4",
+        "electiveGroup": "B",
+        "capacity": 6,
+        "assignedCount": 5,
+        "seatsRemaining": 1,
+        "utilization": 0.8333,
+        "demand": 17,
+        "byPhase": {
+          "merit": 4,
+          "random": 1
+        },
+        "students": [
+          {
+            "studentId": "SEED0011",
+            "name": "Seed Student 0011",
+            "preferenceRank": 1,
+            "phase": "merit",
+            "iteration": 1
+          },
+          {
+            "studentId": "SEED0012",
+            "name": "Seed Student 0012",
+            "preferenceRank": 1,
+            "phase": "merit",
+            "iteration": 1
+          },
+          {
+            "studentId": "SEED0004",
+            "name": "Seed Student 0004",
+            "preferenceRank": 2,
+            "phase": "merit",
+            "iteration": 1
+          },
+          {
+            "studentId": "SEED0013",
+            "name": "Seed Student 0013",
+            "preferenceRank": 2,
+            "phase": "random",
+            "iteration": null
+          },
+          {
+            "studentId": "SEED0016",
+            "name": "Seed Student 0016",
+            "preferenceRank": 2,
+            "phase": "merit",
+            "iteration": 1
+          }
+        ]
+      }
+    ],
+    "total": 8,
+    "page": 1,
+    "limit": 50,
+    "totalPages": 1
+  }
+}

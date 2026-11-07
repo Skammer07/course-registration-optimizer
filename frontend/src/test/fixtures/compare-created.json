@@ -1,0 +1,145 @@
+{
+  "success": true,
+  "message": "Allocation comparison completed",
+  "data": {
+    "run": {
+      "_id": "6ae474d01342cfebe81a0a17",
+      "semesterId": "SEM-FX",
+      "status": "completed",
+      "algorithmVersion": "1.1.0",
+      "randomSeed": 7,
+      "algorithmsRun": [
+        "baseline",
+        "optimized"
+      ],
+      "inputFingerprint": "44b89d6b761c90fbc1dd981fc1f3356b5d352c7d52f5d81adbc3bf3d4a52ff84",
+      "configuration": {
+        "maxCoursesPerStudent": 2,
+        "meritRatio": 0.75,
+        "randomRatio": 0.25,
+        "timetableValidationEnabled": true
+      },
+      "baselineMetrics": {
+        "totalStudents": 30,
+        "totalCourses": 8,
+        "totalAssignments": 34,
+        "assignmentsWithPreferences": 34,
+        "rank2Assignments": 8,
+        "invalidAssignments": 0,
+        "studentsWithAtLeastOneCourse": 27,
+        "studentsWithTwoCourses": 7,
+        "unallocatedStudents": 3,
+        "totalCapacity": 39,
+        "capacityUtilization": 87.18,
+        "rank1Assignments": 23,
+        "averagePreferenceRank": 1.41,
+        "capacityViolations": 0,
+        "studentLimitViolations": 0,
+        "duplicateAssignments": 0,
+        "timetableClashes": 0,
+        "constraintViolations": 0
+      },
+      "optimizedMetrics": {
+        "totalStudents": 30,
+        "totalCourses": 8,
+        "totalAssignments": 39,
+        "assignmentsWithPreferences": 39,
+        "rank2Assignments": 2,
+        "invalidAssignments": 0,
+        "studentsWithAtLeastOneCourse": 21,
+        "studentsWithTwoCourses": 18,
+        "unallocatedStudents": 9,
+        "totalCapacity": 39,
+        "capacityUtilization": 100,
+        "rank1Assignments": 37,
+        "averagePreferenceRank": 1.05,
+        "capacityViolations": 0,
+        "studentLimitViolations": 0,
+        "duplicateAssignments": 0,
+        "timetableClashes": 0,
+        "constraintViolations": 0
+      },
+      "baselineValidation": {
+        "valid": true,
+        "errorCount": 0,
+        "errorList": []
+      },
+      "optimizedValidation": {
+        "valid": true,
+        "errorCount": 0,
+        "errorList": []
+      },
+      "comparison": {
+        "improvement": {
+          "totalAssignments": 5,
+          "studentsWithTwoCourses": 11,
+          "studentsWithAtLeastOneCourse": -6,
+          "unallocatedStudents": 6,
+          "rank1Assignments": 14,
+          "averagePreferenceRank": 0.36,
+          "constraintViolations": 0,
+          "runtimeMs": -5.062
+        },
+        "validComparison": true,
+        "note": "A positive average-preference-rank improvement means the optimized algorithm assigns better-ranked preferences. A negative constraint-violation delta means fewer violations."
+      },
+      "algorithmDetails": {
+        "baseline": {
+          "phaseSummary": {
+            "merit": {
+              "allocated": 26
+            },
+            "random": {
+              "allocated": 8
+            }
+          },
+          "assumptions": [
+            "Merit allocation runs for two iterations.",
+            "Merit and random quotas are calculated separately per course.",
+            "Unused merit quota does not transfer to the random phase.",
+            "Each student can receive at most the configured number of courses.",
+            "Duplicate student-course allocations are prohibited.",
+            "Final allocations are validated before being returned.",
+            "Timetable validation is enabled."
+          ]
+        },
+        "optimized": {
+          "assumptions": {
+            "objective": "Maximize assignments, then minimize preference-rank cost",
+            "maxCoursesPerStudent": 2,
+            "timetableValidationEnabled": true,
+            "flowSolves": 1,
+            "conflictBranches": 0,
+            "meritRandomQuotasPreserved": false
+          },
+          "totalPreferenceCost": 2
+        }
+      },
+      "baselineRuntimeMs": 7.974,
+      "optimizedRuntimeMs": 2.912,
+      "totalRuntimeMs": 44.309,
+      "inputSnapshot": {
+        "studentCount": 30,
+        "courseCount": 8,
+        "preferenceCount": 175,
+        "timetableIncluded": true
+      },
+      "publicationCheck": null,
+      "inputWarnings": {
+        "skippedPreferences": 0,
+        "droppedCourseEntries": 0,
+        "messages": [
+          "Preferences are still open for this semester; students may change them after this run."
+        ]
+      },
+      "errorSummary": null,
+      "selectedAlgorithm": null,
+      "createdBy": "6ae474ce1342cfebe81a09fd",
+      "publishedBy": null,
+      "publishedAt": null,
+      "createdAt": "2026-10-30T10:43:28.090Z",
+      "updatedAt": "2026-10-30T10:43:28.562Z",
+      "__v": 0
+    }
+  }
+}

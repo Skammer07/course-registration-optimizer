@@ -1,0 +1,20 @@
+{
+  "success": true,
+  "message": "Semester status retrieved",
+  "data": {
+    "semesterId": "SEM-FX",
+    "status": "results-published",
+    "recordExists": true,
+    "preferencesOpen": false,
+    "opensAt": null,
+    "closesAt": null,
+    "override": "closed",
+    "resultsPublished": true,
+    "publishedRun": {
+      "id": "6ae474d01342cfebe81a0a17",
+      "semesterId": "SEM-FX",
+      "algorithm": "baseline",
+      "publishedAt": "2026-10-30T10:43:30.241Z"
+    }
+  }
+}

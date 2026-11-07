@@ -1,0 +1,15 @@
+{
+  "success": true,
+  "message": "Semester status retrieved",
+  "data": {
+    "semesterId": "SEM-FX",
+    "status": "preferences-open",
+    "recordExists": true,
+    "preferencesOpen": true,
+    "opensAt": null,
+    "closesAt": null,
+    "override": null,
+    "resultsPublished": false,
+    "publishedRun": null
+  }
+}

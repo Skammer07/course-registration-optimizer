@@ -1,0 +1,19 @@
+{
+  "success": true,
+  "message": "Semesters retrieved",
+  "data": {
+    "semesters": [
+      {
+        "_id": "6ae474ce1342cfebe81a0a04",
+        "semesterId": "SEM-FX",
+        "name": "Autumn (mock)",
+        "preferencesOpenAt": null,
+        "preferencesCloseAt": null,
+        "preferencesOverride": null,
+        "createdAt": "2026-10-30T10:43:26.746Z",
+        "updatedAt": "2026-10-30T10:43:26.746Z",
+        "__v": 0
+      }
+    ]
+  }
+}

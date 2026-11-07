@@ -1,0 +1,15 @@
+{
+  "success": true,
+  "message": "Your allocation results retrieved",
+  "data": {
+    "student": {
+      "studentId": "SEED0001",
+      "name": "Seed Student 0001"
+    },
+    "semesterId": "SEM-FX",
+    "published": false,
+    "run": null,
+    "assignments": [],
+    "summary": null
+  }
+}

@@ -1,0 +1,247 @@
+{
+  "success": true,
+  "message": "Results by student retrieved",
+  "data": {
+    "runId": "6ae474d01342cfebe81a0a17",
+    "algorithm": "baseline",
+    "snapshotAvailable": true,
+    "students": [
+      {
+        "studentId": "SEED0030",
+        "name": "Seed Student 0030",
+        "cgpa": 9.8,
+        "courses": [
+          {
+            "courseCode": "SD-A4",
+            "title": "Seed A4",
+            "electiveGroup": "A",
+            "preferenceRank": 1,
+            "phase": "merit",
+            "iteration": 1
+          }
+        ],
+        "coursesAllocated": 1,
+        "averageRank": 1,
+        "status": "allocated"
+      },
+      {
+        "studentId": "SEED0009",
+        "name": "Seed Student 0009",
+        "cgpa": 9.23,
+        "courses": [
+          {
+            "courseCode": "SD-A4",
+            "title": "Seed A4",
+            "electiveGroup": "A",
+            "preferenceRank": 1,
+            "phase": "merit",
+            "iteration": 1
+          }
+        ],
+        "coursesAllocated": 1,
+        "averageRank": 1,
+        "status": "allocated"
+      },
+      {
+        "studentId": "SEED0024",
+        "name": "Seed Student 0024",
+        "cgpa": 9.19,
+        "courses": [
+          {
+            "courseCode": "SD-A4",
+            "title": "Seed A4",
+            "electiveGroup": "A",
+            "preferenceRank": 1,
+            "phase": "merit",
+            "iteration": 1
+          },
+          {
+            "courseCode": "SD-B3",
+            "title": "Seed B3",
+            "electiveGroup": "B",
+            "preferenceRank": 3,
+            "phase": "random",
+            "iteration": null
+          }
+        ],
+        "coursesAllocated": 2,
+        "averageRank": 2,
+        "status": "allocated"
+      },
+      {
+        "studentId": "SEED0018",
+        "name": "Seed Student 0018",
+        "cgpa": 9.11,
+        "courses": [
+          {
+            "courseCode": "SD-A3",
+            "title": "Seed A3",
+            "electiveGroup": "A",
+            "preferenceRank": 1,
+            "phase": "merit",
+            "iteration": 1
+          },
+          {
+            "courseCode": "SD-A2",
+            "title": "Seed A2",
+            "electiveGroup": "A",
+            "preferenceRank": 3,
+            "phase": "random",
+            "iteration": null
+          }
+        ],
+        "coursesAllocated": 2,
+        "averageRank": 2,
+        "status": "allocated"
+      },
+      {
+        "studentId": "SEED0012",
+        "name": "Seed Student 0012",
+        "cgpa": 8.85,
+        "courses": [
+          {
+            "courseCode": "SD-B4",
+            "title": "Seed B4",
+            "electiveGroup": "B",
+            "preferenceRank": 1,
+            "phase": "merit",
+            "iteration": 1
+          }
+        ],
+        "coursesAllocated": 1,
+        "averageRank": 1,
+        "status": "allocated"
+      },
+      {
+        "studentId": "SEED0023",
+        "name": "Seed Student 0023",
+        "cgpa": 8.8,
+        "courses": [
+          {
+            "courseCode": "SD-A1",
+            "title": "Seed A1",
+            "electiveGroup": "A",
+            "preferenceRank": 1,
+            "phase": "merit",
+            "iteration": 1
+          }
+        ],
+        "coursesAllocated": 1,
+        "averageRank": 1,
+        "status": "allocated"
+      },
+      {
+        "studentId": "SEED0005",
+        "name": "Seed Student 0005",
+        "cgpa": 8.54,
+        "courses": [
+          {
+            "courseCode": "SD-A1",
+            "title": "Seed A1",
+            "electiveGroup": "A",
+            "preferenceRank": 1,
+            "phase": "merit",
+            "iteration": 1
+          }
+        ],
+        "coursesAllocated": 1,
+        "averageRank": 1,
+        "status": "allocated"
+      },
+      {
+        "studentId": "SEED0002",
+        "name": "Seed Student 0002",
+        "cgpa": 8.5,
+        "courses": [
+          {
+            "courseCode": "SD-A3",
+            "title": "Seed A3",
+            "electiveGroup": "A",
+            "preferenceRank": 1,
+            "phase": "merit",
+            "iteration": 1
+          }
+        ],
+        "coursesAllocated": 1,
+        "averageRank": 1,
+        "status": "allocated"
+      },
+      {
+        "studentId": "SEED0028",
+        "name": "Seed Student 0028",
+        "cgpa": 8.43,
+        "courses": [
+          {
+            "courseCode": "SD-A2",
+            "title": "Seed A2",
+            "electiveGroup": "A",
+            "preferenceRank": 1,
+            "phase": "merit",
+            "iteration": 1
+          }
+        ],
+        "coursesAllocated": 1,
+        "averageRank": 1,
+        "status": "allocated"
+      },
+      {
+        "studentId": "SEED0027",
+        "name": "Seed Student 0027",
+        "cgpa": 8.38,
+        "courses": [
+          {
+            "courseCode": "SD-A2",
+            "title": "Seed A2",
+            "electiveGroup": "A",
+            "preferenceRank": 1,
+            "phase": "merit",
+            "iteration": 1
+          }
+        ],
+        "coursesAllocated": 1,
+        "averageRank": 1,
+        "status": "allocated"
+      },
+      {
+        "studentId": "SEED0011",
+        "name": "Seed Student 0011",
+        "cgpa": 8.34,
+        "courses": [
+          {
+            "courseCode": "SD-B4",
+            "title": "Seed B4",
+            "electiveGroup": "B",
+            "preferenceRank": 1,
+            "phase": "merit",
+            "iteration": 1
+          }
+        ],
+        "coursesAllocated": 1,
+        "averageRank": 1,
+        "status": "allocated"
+      },
+      {
+        "studentId": "SEED0025",
+        "name": "Seed Student 0025",
+        "cgpa": 8.26,
+        "courses": [
+          {
+            "courseCode": "SD-A1",
+            "title": "Seed A1",
+            "electiveGroup": "A",
+            "preferenceRank": 1,
+            "phase": "merit",
+            "iteration": 1
+          }
+        ],
+        "coursesAllocated": 1,
+        "averageRank": 1,
+        "status": "allocated"
+      }
+    ],
+    "total": 30,
+    "page": 1,
+    "limit": 12,
+    "totalPages": 3
+  }
+}

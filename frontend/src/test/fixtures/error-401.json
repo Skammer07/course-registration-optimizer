@@ -1,0 +1,9 @@
+{
+  "success": false,
+  "error": {
+    "code": "UNAUTHORIZED",
+    "message": "No authentication token provided.",
+    "details": []
+  },
+  "requestId": "9c3e37b3-c049-46b5-944c-74680218d3f1"
+}

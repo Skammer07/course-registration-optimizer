@@ -1,0 +1,18 @@
+{
+  "success": true,
+  "message": "Semester overview retrieved",
+  "data": {
+    "semesters": [
+      {
+        "semesterId": "SEM-FX",
+        "name": "Autumn (mock)",
+        "recordExists": true,
+        "students": 30,
+        "courses": 8,
+        "preferenceLists": 60,
+        "runs": 2,
+        "published": true
+      }
+    ]
+  }
+}
