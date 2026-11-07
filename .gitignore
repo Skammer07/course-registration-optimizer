@@ -18,3 +18,6 @@ docs/implementation-status-report.md
 docs/project-status-report.md
 docs/project-status-report.docx
 docs/project-overview.pdf
+
+# Database backups taken before a wipe (contain password hashes)
+data/backups/
