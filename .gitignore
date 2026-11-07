@@ -12,3 +12,9 @@ Thumbs.db
 data/raw/
 data/private/
 data/real/
+
+# Personal progress notes (kept locally, not published)
+docs/implementation-status-report.md
+docs/project-status-report.md
+docs/project-status-report.docx
+docs/project-overview.pdf

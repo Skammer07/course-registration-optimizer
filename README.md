@@ -279,7 +279,7 @@ course-registration-optimizer/
     └── results/
 ```
 
-The tree above is the original plan. The repository now contains the working algorithm package, the backend API and the React frontend; see `docs/project-status-report.md` for what exists and what is left, and each folder's own README for how to run it.
+The tree above is the original plan. The repository now contains the working algorithm package, the backend API and the React frontend; see each folder's own README for how to run it.
 
 ---
 
@@ -573,7 +573,7 @@ The prototype is ready for presentation when:
 
 **Implemented:** baseline (merit then lottery, default 70/30), min-cost max-flow optimizer with timetable-clash search and a deterministic search limit, held to the baseline's result (no student ends worse) and using CGPA, elective groups as independent priority lists of up to 15 choices drawing from one shared pool (one course per group, never the same course twice), compulsory courses as fixed timetable slots, independent validation, metrics and comparison, run storage with replay verification and publishing, CSV import, student preference and result pages.
 
-**Not done yet:** strict CGPA order everywhere (the lottery and the floor keep some lower-CGPA winners), a second allocation round, minimum course size, department eligibility for electives, half-semester courses, semester/deadline and user-management screens, a repeatable benchmark and results chapter. Details and feasibility are in `docs/project-status-report.md`.
+**Not done yet:** strict CGPA order everywhere (the lottery and the floor keep some lower-CGPA winners), a second allocation round, minimum course size, department eligibility for electives, half-semester courses, semester/deadline and user-management screens, a repeatable benchmark and results chapter.
 
 ### Next actions
 1. Confirm the open rules with the Academic Section (list in `docs/allocation-rules.md`, section 7).
