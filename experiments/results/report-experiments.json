@@ -1,0 +1,496 @@
+{
+  "generatedAt": "2026-11-09T10:03:21.716Z",
+  "options": {
+    "maxWork": 2500000000,
+    "maxFlowSolves": 2000,
+    "searchTimeLimitMs": 30000,
+    "maxCoursesPerStudent": 2,
+    "meritRatio": 0.7,
+    "randomRatio": 0.3,
+    "oneCoursePerGroup": true,
+    "optimizerFloor": "baseline",
+    "cgpaPriority": true
+  },
+  "results": [
+    {
+      "case": {
+        "size": 200,
+        "seed": 11,
+        "seatFactor": 1.04
+      },
+      "algorithmVersion": "1.5.1",
+      "lotterySeed": 1011,
+      "seats": 416,
+      "students": 200,
+      "rankedEntries": 6000,
+      "baseline": {
+        "assignments": 400,
+        "studentsWithTwoCourses": 200,
+        "unallocatedStudents": 0,
+        "firstChoice": 220,
+        "secondChoice": 84,
+        "averageRank": 2.24,
+        "seatUtilization": 93.68,
+        "studentsMissingAGroup": 0,
+        "cgpaPriorityViolations": 207,
+        "ruleViolations": 0,
+        "totalPreferenceCost": 495,
+        "runtimeMs": 20.364
+      },
+      "optimized": {
+        "assignments": 400,
+        "studentsWithTwoCourses": 200,
+        "unallocatedStudents": 0,
+        "firstChoice": 228,
+        "secondChoice": 96,
+        "averageRank": 1.79,
+        "seatUtilization": 93.68,
+        "studentsMissingAGroup": 0,
+        "cgpaPriorityViolations": 90,
+        "ruleViolations": 0,
+        "totalPreferenceCost": 315,
+        "runtimeMs": 17003.865
+      },
+      "byStudent": {
+        "better": 42,
+        "same": 358,
+        "worse": 0,
+        "newlyFilled": 0
+      },
+      "search": {
+        "optimal": false,
+        "stopReason": "work-limit",
+        "searchBound": {
+          "assignments": 400,
+          "preferenceCost": 283
+        },
+        "flowSolves": 1468,
+        "conflictBranches": 732,
+        "cgpaPriorityApplied": true,
+        "preferencesRemovedByFixedSlots": 1042,
+        "preferencesRemovedByFloor": 4197
+      },
+      "wallMs": 17055
+    },
+    {
+      "case": {
+        "size": 500,
+        "seed": 11,
+        "seatFactor": 1.04
+      },
+      "algorithmVersion": "1.5.1",
+      "lotterySeed": 1011,
+      "seats": 1040,
+      "students": 500,
+      "rankedEntries": 15000,
+      "baseline": {
+        "assignments": 998,
+        "studentsWithTwoCourses": 498,
+        "unallocatedStudents": 0,
+        "firstChoice": 455,
+        "secondChoice": 212,
+        "averageRank": 2.89,
+        "seatUtilization": 95.87,
+        "studentsMissingAGroup": 2,
+        "cgpaPriorityViolations": 1057,
+        "ruleViolations": 0,
+        "totalPreferenceCost": 1886,
+        "runtimeMs": 42.408
+      },
+      "optimized": {
+        "assignments": 1000,
+        "studentsWithTwoCourses": 500,
+        "unallocatedStudents": 0,
+        "firstChoice": 472,
+        "secondChoice": 225,
+        "averageRank": 2.46,
+        "seatUtilization": 96.06,
+        "studentsMissingAGroup": 0,
+        "cgpaPriorityViolations": 735,
+        "ruleViolations": 0,
+        "totalPreferenceCost": 1457,
+        "runtimeMs": 17910.915
+      },
+      "byStudent": {
+        "better": 81,
+        "same": 917,
+        "worse": 0,
+        "newlyFilled": 2
+      },
+      "search": {
+        "optimal": false,
+        "stopReason": "work-limit",
+        "searchBound": {
+          "assignments": 1000,
+          "preferenceCost": 1261
+        },
+        "flowSolves": 195,
+        "conflictBranches": 96,
+        "cgpaPriorityApplied": true,
+        "preferencesRemovedByFixedSlots": 2366,
+        "preferencesRemovedByFloor": 10173
+      },
+      "wallMs": 18030
+    },
+    {
+      "case": {
+        "size": 1000,
+        "seed": 1,
+        "seatFactor": 1.04
+      },
+      "algorithmVersion": "1.5.1",
+      "lotterySeed": 1001,
+      "seats": 2080,
+      "students": 1000,
+      "rankedEntries": 30000,
+      "baseline": {
+        "assignments": 2000,
+        "studentsWithTwoCourses": 1000,
+        "unallocatedStudents": 0,
+        "firstChoice": 1072,
+        "secondChoice": 477,
+        "averageRank": 2.24,
+        "seatUtilization": 96.2,
+        "studentsMissingAGroup": 0,
+        "cgpaPriorityViolations": 1167,
+        "ruleViolations": 0,
+        "totalPreferenceCost": 2475,
+        "runtimeMs": 112.142
+      },
+      "optimized": {
+        "assignments": 2000,
+        "studentsWithTwoCourses": 1000,
+        "unallocatedStudents": 0,
+        "firstChoice": 1140,
+        "secondChoice": 495,
+        "averageRank": 1.82,
+        "seatUtilization": 96.2,
+        "studentsMissingAGroup": 0,
+        "cgpaPriorityViolations": 562,
+        "ruleViolations": 0,
+        "totalPreferenceCost": 1636,
+        "runtimeMs": 19768.669
+      },
+      "byStudent": {
+        "better": 164,
+        "same": 1836,
+        "worse": 0,
+        "newlyFilled": 0
+      },
+      "search": {
+        "optimal": false,
+        "stopReason": "work-limit",
+        "searchBound": {
+          "assignments": 2000,
+          "preferenceCost": 1389
+        },
+        "flowSolves": 61,
+        "conflictBranches": 29,
+        "cgpaPriorityApplied": true,
+        "preferencesRemovedByFixedSlots": 4310,
+        "preferencesRemovedByFloor": 21939
+      },
+      "wallMs": 20025
+    },
+    {
+      "case": {
+        "size": 1000,
+        "seed": 2,
+        "seatFactor": 1.04
+      },
+      "algorithmVersion": "1.5.1",
+      "lotterySeed": 1002,
+      "seats": 2080,
+      "students": 1000,
+      "rankedEntries": 30000,
+      "baseline": {
+        "assignments": 1996,
+        "studentsWithTwoCourses": 996,
+        "unallocatedStudents": 0,
+        "firstChoice": 895,
+        "secondChoice": 447,
+        "averageRank": 2.67,
+        "seatUtilization": 95.92,
+        "studentsMissingAGroup": 4,
+        "cgpaPriorityViolations": 1167,
+        "ruleViolations": 0,
+        "totalPreferenceCost": 3341,
+        "runtimeMs": 92.872
+      },
+      "optimized": {
+        "assignments": 2000,
+        "studentsWithTwoCourses": 1000,
+        "unallocatedStudents": 0,
+        "firstChoice": 940,
+        "secondChoice": 467,
+        "averageRank": 2.28,
+        "seatUtilization": 96.11,
+        "studentsMissingAGroup": 0,
+        "cgpaPriorityViolations": 688,
+        "ruleViolations": 0,
+        "totalPreferenceCost": 2551,
+        "runtimeMs": 18981.838
+      },
+      "byStudent": {
+        "better": 145,
+        "same": 1851,
+        "worse": 0,
+        "newlyFilled": 4
+      },
+      "search": {
+        "optimal": false,
+        "stopReason": "work-limit",
+        "searchBound": {
+          "assignments": 2000,
+          "preferenceCost": 2108
+        },
+        "flowSolves": 56,
+        "conflictBranches": 26,
+        "cgpaPriorityApplied": true,
+        "preferencesRemovedByFixedSlots": 7973,
+        "preferencesRemovedByFloor": 18112
+      },
+      "wallMs": 19228
+    },
+    {
+      "case": {
+        "size": 1000,
+        "seed": 3,
+        "seatFactor": 1.04
+      },
+      "algorithmVersion": "1.5.1",
+      "lotterySeed": 1003,
+      "seats": 2080,
+      "students": 1000,
+      "rankedEntries": 30000,
+      "baseline": {
+        "assignments": 1994,
+        "studentsWithTwoCourses": 994,
+        "unallocatedStudents": 0,
+        "firstChoice": 905,
+        "secondChoice": 432,
+        "averageRank": 2.77,
+        "seatUtilization": 95.87,
+        "studentsMissingAGroup": 6,
+        "cgpaPriorityViolations": 1677,
+        "ruleViolations": 0,
+        "totalPreferenceCost": 3524,
+        "runtimeMs": 85.205
+      },
+      "optimized": {
+        "assignments": 2000,
+        "studentsWithTwoCourses": 1000,
+        "unallocatedStudents": 0,
+        "firstChoice": 932,
+        "secondChoice": 454,
+        "averageRank": 2.42,
+        "seatUtilization": 96.15,
+        "studentsMissingAGroup": 0,
+        "cgpaPriorityViolations": 1167,
+        "ruleViolations": 0,
+        "totalPreferenceCost": 2838,
+        "runtimeMs": 19258.004
+      },
+      "byStudent": {
+        "better": 119,
+        "same": 1875,
+        "worse": 0,
+        "newlyFilled": 6
+      },
+      "search": {
+        "optimal": false,
+        "stopReason": "work-limit",
+        "searchBound": {
+          "assignments": 2000,
+          "preferenceCost": 2358
+        },
+        "flowSolves": 52,
+        "conflictBranches": 23,
+        "cgpaPriorityApplied": true,
+        "preferencesRemovedByFixedSlots": 6193,
+        "preferencesRemovedByFloor": 19457
+      },
+      "wallMs": 19507
+    },
+    {
+      "case": {
+        "size": 1000,
+        "seed": 4,
+        "seatFactor": 1.04
+      },
+      "algorithmVersion": "1.5.1",
+      "lotterySeed": 1004,
+      "seats": 2080,
+      "students": 1000,
+      "rankedEntries": 30000,
+      "baseline": {
+        "assignments": 1996,
+        "studentsWithTwoCourses": 996,
+        "unallocatedStudents": 0,
+        "firstChoice": 927,
+        "secondChoice": 462,
+        "averageRank": 2.64,
+        "seatUtilization": 96.1,
+        "studentsMissingAGroup": 4,
+        "cgpaPriorityViolations": 1371,
+        "ruleViolations": 0,
+        "totalPreferenceCost": 3267,
+        "runtimeMs": 76.589
+      },
+      "optimized": {
+        "assignments": 2000,
+        "studentsWithTwoCourses": 1000,
+        "unallocatedStudents": 0,
+        "firstChoice": 961,
+        "secondChoice": 481,
+        "averageRank": 2.29,
+        "seatUtilization": 96.29,
+        "studentsMissingAGroup": 0,
+        "cgpaPriorityViolations": 892,
+        "ruleViolations": 0,
+        "totalPreferenceCost": 2572,
+        "runtimeMs": 18379.735
+      },
+      "byStudent": {
+        "better": 118,
+        "same": 1878,
+        "worse": 0,
+        "newlyFilled": 4
+      },
+      "search": {
+        "optimal": false,
+        "stopReason": "work-limit",
+        "searchBound": {
+          "assignments": 2000,
+          "preferenceCost": 1831
+        },
+        "flowSolves": 54,
+        "conflictBranches": 17,
+        "cgpaPriorityApplied": true,
+        "preferencesRemovedByFixedSlots": 6171,
+        "preferencesRemovedByFloor": 19721
+      },
+      "wallMs": 18620
+    },
+    {
+      "case": {
+        "size": 1000,
+        "seed": 5,
+        "seatFactor": 1.04
+      },
+      "algorithmVersion": "1.5.1",
+      "lotterySeed": 1005,
+      "seats": 2080,
+      "students": 1000,
+      "rankedEntries": 30000,
+      "baseline": {
+        "assignments": 2000,
+        "studentsWithTwoCourses": 1000,
+        "unallocatedStudents": 0,
+        "firstChoice": 999,
+        "secondChoice": 449,
+        "averageRank": 2.42,
+        "seatUtilization": 96.02,
+        "studentsMissingAGroup": 0,
+        "cgpaPriorityViolations": 1263,
+        "ruleViolations": 0,
+        "totalPreferenceCost": 2839,
+        "runtimeMs": 87.55
+      },
+      "optimized": {
+        "assignments": 2000,
+        "studentsWithTwoCourses": 1000,
+        "unallocatedStudents": 0,
+        "firstChoice": 1044,
+        "secondChoice": 482,
+        "averageRank": 2,
+        "seatUtilization": 96.02,
+        "studentsMissingAGroup": 0,
+        "cgpaPriorityViolations": 716,
+        "ruleViolations": 0,
+        "totalPreferenceCost": 2007,
+        "runtimeMs": 21475.888
+      },
+      "byStudent": {
+        "better": 164,
+        "same": 1836,
+        "worse": 0,
+        "newlyFilled": 0
+      },
+      "search": {
+        "optimal": false,
+        "stopReason": "work-limit",
+        "searchBound": {
+          "assignments": 2000,
+          "preferenceCost": 1591
+        },
+        "flowSolves": 56,
+        "conflictBranches": 26,
+        "cgpaPriorityApplied": true,
+        "preferencesRemovedByFixedSlots": 5339,
+        "preferencesRemovedByFloor": 20641
+      },
+      "wallMs": 21736
+    },
+    {
+      "case": {
+        "size": 1500,
+        "seed": 11,
+        "seatFactor": 1.04
+      },
+      "algorithmVersion": "1.5.1",
+      "lotterySeed": 1011,
+      "seats": 3120,
+      "students": 1500,
+      "rankedEntries": 45000,
+      "baseline": {
+        "assignments": 2986,
+        "studentsWithTwoCourses": 1486,
+        "unallocatedStudents": 0,
+        "firstChoice": 1326,
+        "secondChoice": 634,
+        "averageRank": 2.71,
+        "seatUtilization": 95.77,
+        "studentsMissingAGroup": 14,
+        "cgpaPriorityViolations": 2693,
+        "ruleViolations": 0,
+        "totalPreferenceCost": 5115,
+        "runtimeMs": 152.75
+      },
+      "optimized": {
+        "assignments": 2998,
+        "studentsWithTwoCourses": 1498,
+        "unallocatedStudents": 0,
+        "firstChoice": 1353,
+        "secondChoice": 662,
+        "averageRank": 2.55,
+        "seatUtilization": 96.15,
+        "studentsMissingAGroup": 2,
+        "cgpaPriorityViolations": 2261,
+        "ruleViolations": 0,
+        "totalPreferenceCost": 4633,
+        "runtimeMs": 22988.339
+      },
+      "byStudent": {
+        "better": 115,
+        "same": 2871,
+        "worse": 0,
+        "newlyFilled": 12
+      },
+      "search": {
+        "optimal": false,
+        "stopReason": "work-limit",
+        "searchBound": {
+          "assignments": 3000,
+          "preferenceCost": 3562
+        },
+        "flowSolves": 22,
+        "conflictBranches": 9,
+        "cgpaPriorityApplied": true,
+        "preferencesRemovedByFixedSlots": 8621,
+        "preferencesRemovedByFloor": 29447
+      },
+      "wallMs": 23401
+    }
+  ]
+}
